@@ -1,0 +1,28 @@
+As it is Currently:
+
+statements   : statement*
+
+statement    : PARAGRAPH_BREAK? group PARAGRAPH_BREAK?
+
+group        : python|paragraph
+
+python       : PASS1EXEC|PASS1EVAL|PASS2EXEC|PASS2EVAL
+
+paragraph    : WORD*
+
+-------------------------------------------------------------------------------
+As it is Planned:
+
+statements   : statement*
+
+statement    : PARAGRAPH_BREAK? (cmnd_call|python|paragraph) PARAGRAPH_BREAK?
+
+cmnd_call    : COMMAND_NAME (cmnd_exp* cmnd_key_exp*)?
+
+cmnd_exp     : LCBRACE statement RCBRACE
+
+cmnd_key_exp : LCBRACE WORD EQUAL_SIGN statement RCBRACE
+
+python       : PASS1EXEC|PASS1EVAL|PASS2EXEC|PASS2EVAL
+
+paragraph    : WORD*

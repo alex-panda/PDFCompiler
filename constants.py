@@ -32,12 +32,14 @@ class TT(Enum):
     OCBRACE = 'OPENING CURLY BRACE'
     CCBRACE = 'CLOSING CURLY BRACE'
     EQUAL_SIGN = 'EQUALS SIGN'
-    PLAIN_TEXT = 'PLAIN TEXT'
+    PLAIN_TEXT = 'WORD'
 
     EXEC_PYTH1 = 'PYTHON EXEC FIRST PASS'
     EVAL_PYTH1 = 'PYTHON EVAL FOR FIRST PASS'
     EXEC_PYTH2 = 'PYTHON EXEC SECOND PASS'
     EVAL_PYTH2 = 'PYTHON EVAL FOR SECOND PASS'
+
+    PARAGRAPH_BREAK = 'PARAGRAPH BREAK'
 
     CMND_NAME = 'COMMAND NAME'
 
@@ -97,4 +99,14 @@ class TT_M:
     MULTI_LINE_PYTH_2PASS_EVAL_END =    match([*nl('<-?\\')])
 
 del nl
+
+# -----------------------------------------------------------------------------
+# API Constants (Constants that people compiling their pdf might actually see)
+
+class ALIGN(Enum):
+    # NOTE: The values must be the same as the how you get them. I.E. ALIGN.LEFT must have value 'left', 'LeFt', 'LEFT', etc.
+    LEFT = 'left'
+    CENTER = 'center'
+    RIGHT = 'right'
+    JUSTIFIED = 'justified'
 

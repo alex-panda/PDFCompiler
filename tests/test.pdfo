@@ -1,8 +1,8 @@
+
+
 what
+
 \bold
-
-
-
 
 
 
@@ -33,6 +33,11 @@ for i in len(num):
     print(x)
 <-2\
 
+HELLO, is there a comment after this? % some comment
+
+%->
+This is also supposed to be a comment.
+<-%
 
 \begin_doc
 
