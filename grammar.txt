@@ -1,28 +1,50 @@
-As it is Currently:
+-------------------------------------------------------------------------------
+The Grammar right now:
 
-statements   : statement*
+document     : FILE_START? PARAGRAPH_BREAK? paragraphs*
 
-statement    : PARAGRAPH_BREAK? group PARAGRAPH_BREAK?
+paragraph    : writing PARAGRAPH_BREAK?
 
-group        : python|paragraph
+writing      : python|plain_text
 
-python       : PASS1EXEC|PASS1EVAL|PASS2EXEC|PASS2EVAL
+python       : PASS1EXEC|PASS2EXEC|PASS1EVAL|PASS2EVAL
 
-paragraph    : WORD*
+plain_text   : (OCBRACE|CCBRACE|EQUAL_SIGN|WORD)*
 
 -------------------------------------------------------------------------------
-As it is Planned:
+The Grammar in the Future:
 
-statements   : statement*
+document     : PARAGRAPH_BREAK? paragraphs*
 
-statement    : PARAGRAPH_BREAK? (cmnd_call|python|paragraph) PARAGRAPH_BREAK?
+paragraph    : writing PARAGRAPH_BREAK?
 
-cmnd_call    : COMMAND_NAME (cmnd_exp* cmnd_key_exp*)?
+writing      : python|cmnd_call|plain_text
 
-cmnd_exp     : LCBRACE statement RCBRACE
+python       : PASS1EXEC|PASS2EXEC|PASS1EVAL|PASS2EVAL
 
-cmnd_key_exp : LCBRACE WORD EQUAL_SIGN statement RCBRACE
+plain_text   : (OCBRACE|CCBRACE|EQUAL_SIGN|WORD)*
 
-python       : PASS1EXEC|PASS1EVAL|PASS2EXEC|PASS2EVAL
+cmnd_call    : CMND_NAME (cmnd_exp* (cmnd_key_exp*)?)?
 
-paragraph    : WORD*
+cmnd_exp     : LCBRACE paragraph* RCBRACE
+
+cmnd_key_exp : LCBRACE WORD EQUAL_SIGN paragraph* RCBRACE
+
+-------------------------------------------------------------------------------
+Legend:
+    ? means "zero or one of" whatever's before it
+    * means "zero or more of" whatever's before it
+    | means "or"
+    () groups things so that "?" or "*" affects the entire group
+
+Note: In "writing", the rules must be parsed in that order because they go
+    from narrowest to broadest (as in, python statements accept very specific
+    tokens, then cmnd_call accepts more tokens, and then plain_text accepts
+    the most types of tokens).
+
+Note: When putting text on the PDF, the PARAGRAPH_BREAK in "document" is always
+    ignored.
+
+Note: When putting text on the PDF, "paragraph" will only honor the
+    PARAGRAPH_BREAK if "writing" is not an empty string, otherwise the
+    PARAGRAPH_BREAK will be ignored.
