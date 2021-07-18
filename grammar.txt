@@ -1,18 +1,32 @@
 -------------------------------------------------------------------------------
 The Grammar right now:
 
-document     : FILE_START? PARAGRAPH_BREAK? paragraphs*
+RULE_NAME    : RULE_DESCRIPTION
 
-paragraph    : writing PARAGRAPH_BREAK?
+file            : FILE_START document FILE_END
 
-writing      : python|plain_text
+document        : PARAGRAPH_BREAK? paragraphs*
 
-python       : PASS1EXEC|PASS2EXEC|PASS1EVAL|PASS2EVAL
+paragraph       : writing PARAGRAPH_BREAK?
 
-plain_text   : (OCBRACE|CCBRACE|EQUAL_SIGN|WORD)*
+writing         : python|plain_text
+
+python          : python_1st_eval|python_1st_exec|python_2nd_eval|python_2nd_exec
+
+python_2nd_exec : PASS2EXEC
+
+python_2nd_eval : PASS2EVAL
+
+python_1st_exec : PASS1EXEC
+
+python_1st_eval : PASS1EVAL
+
+plain_text      : (OCBRACE|CCBRACE|EQUAL_SIGN|WORD)*
 
 -------------------------------------------------------------------------------
 The Grammar in the Future:
+
+file         : FILE_START document FILE_END
 
 document     : PARAGRAPH_BREAK? paragraphs*
 

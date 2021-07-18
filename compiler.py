@@ -11,6 +11,7 @@ from reportlab.lib import units, colors, pagesizes as pagesizes
 
 from constants import CMND_CHARS, END_LINE_CHARS, ALIGN, TT, TT_M
 from tools import assure_decimal, is_escaped, is_escaping, exec_python, eval_python, string_with_arrows
+from placer import Placer
 
 # -----------------------------------------------------------------------------
 # Errors That Can Occur While Compiling
@@ -55,9 +56,9 @@ class InvalidSyntaxError(Error):
     def __init__(self, pos_start, pos_end, details=''):
         super().__init__(pos_start, pos_end, 'Invalid Syntax', details)
 
-class RTError(Error):
+class RunTimeError(Error):
     def __init__(self, pos_start, pos_end, details, context):
-        super().__init__(pos_start, pos_end, 'Runtime Error', details)
+        super().__init__(pos_start, pos_end, 'Run-Time Error', details)
         self.context = context
 
     def as_string(self):
@@ -71,7 +72,7 @@ class RTError(Error):
         pos = self.pos_start
         ctx = self.context
 
-        while ctx:
+        while ctx is not None:
             result = f'  File {pos.fn}, line {str(pos.ln + 1)}, in {ctx.display_name}\n' + result
             pos = ctx.parent_entry_pos
             ctx = ctx.parent
@@ -85,6 +86,7 @@ class Position:
     """
     Position in a Tokenized file or a file that is being tokenized.
     """
+    __slots__ = ['idx', 'ln', 'col', 'file_path', 'file_text']
     def __init__(self, idx, ln, col, file_path, file_text):
         self.idx = idx
         self.ln = ln
@@ -100,6 +102,8 @@ class Position:
             self.ln += 1
             self.col = 0
 
+        return self
+
     def copy(self):
         return Position(self.idx, self.ln, self.col, self.file_path, self.file_text)
 
@@ -107,16 +111,18 @@ class Position:
 # File Class
 
 class File:
+    __slots__ = ['file_path', 'raw_text', 'tokens', 'ast']
     def __init__(self, file_path):
         self.file_path = file_path # Path to file
         self.raw_text = None
         self.tokens = None # The tokens that make up the File once it has been tokenized
+        self.ast = None
 
 # -----------------------------------------------------------------------------
 # Token Class
 
 class Token:
-    __slots__ = ('start_pos', 'end_pos', 'type', 'value')
+    __slots__ = ['start_pos', 'end_pos', 'type', 'value']
     def __init__(self, type, value, start_pos, end_pos=None):
         self.start_pos = start_pos
 
@@ -219,9 +225,9 @@ class Tokenizer:
                 self._advance()
             elif cc == '%':
                 # The rest of the comment is a comment
-                self._parse_comment()
+                self._tokenize_comment()
             elif cc == '\\':
-                t = self._parse_cntrl_seq()
+                t = self._tokenize_cntrl_seq()
             else:
                 self._plain_text_char()
 
@@ -249,7 +255,7 @@ class Tokenizer:
     # -------------------------------------------------------------------------
     # Parsing Methods
 
-    def _parse_comment(self):
+    def _tokenize_comment(self):
         """
         Parses a comment, basically just eating any characters it finds until
             the comment is done.
@@ -281,7 +287,7 @@ class Tokenizer:
                 else:
                     self._advance()
 
-    def _parse_cntrl_seq(self):
+    def _tokenize_cntrl_seq(self):
         """
         Parse a control sequence.
         """
@@ -292,45 +298,45 @@ class Tokenizer:
         # First Pass Python -----------------------
         if self._match(TT_M.ONE_LINE_PYTH_1PASS_EXEC_START):
             # The rest of the line (or until '<\\', '<1\\', '\n', '\r\n') is python for first pass
-            t = self._parse_python(TT_M.ONE_LINE_PYTH_1PASS_EXEC_END, 1, pos_start)
+            t = self._tokenize_python(TT_M.ONE_LINE_PYTH_1PASS_EXEC_END, 1, pos_start)
 
         elif self._match(TT_M.MULTI_LINE_PYTH_1PASS_EXEC_START):
             # All of it is python for first pass until '<-\\' or '<-1\\'
-            t = self._parse_python(TT_M.MULTI_LINE_PYTH_1PASS_EXEC_END, 1, pos_start)
+            t = self._tokenize_python(TT_M.MULTI_LINE_PYTH_1PASS_EXEC_END, 1, pos_start)
 
         elif self._match(TT_M.ONE_LINE_PYTH_1PASS_EVAL_START):
             # The rest of the line (or until '<?\\') is python for eval expression in second pass
-            t = self._parse_python(TT_M.ONE_LINE_PYTH_1PASS_EVAL_END, 2, pos_start, use_eval=True)
+            t = self._tokenize_python(TT_M.ONE_LINE_PYTH_1PASS_EVAL_END, 2, pos_start, use_eval=True)
 
         elif self._match(TT_M.MULTI_LINE_PYTH_1PASS_EVAL_START):
             # The rest of the line (or until '<?\\') is python for eval expression in second pass
-            t = self._parse_python(TT_M.MULTI_LINE_PYTH_1PASS_EVAL_END, 2, pos_start, use_eval=True)
+            t = self._tokenize_python(TT_M.MULTI_LINE_PYTH_1PASS_EVAL_END, 2, pos_start, use_eval=True)
 
         # Second Pass Python ----------------------
         elif self._match(TT_M.ONE_LINE_PYTH_2PASS_EXEC_START):
             # The rest of the line (or until '<2\\') is python for second pass
-            t = self._parse_python(TT_M.ONE_LINE_PYTH_2PASS_EXEC_END, 2, pos_start)
+            t = self._tokenize_python(TT_M.ONE_LINE_PYTH_2PASS_EXEC_END, 2, pos_start)
 
         elif self._match(TT_M.MULTI_LINE_PYTH_2PASS_EXEC_START):
             # All of it is python for first pass until '<-2\\'
-            t = self._parse_python(TT_M.MULTI_LINE_PYTH_2PASS_EXEC_END, 2, pos_start)
+            t = self._tokenize_python(TT_M.MULTI_LINE_PYTH_2PASS_EXEC_END, 2, pos_start)
 
         elif self._match(TT_M.ONE_LINE_PYTH_2PASS_EVAL_START):
             # The rest of the line (or until '<?\\') is python for eval expression in second pass
-            t = self._parse_python(TT_M.ONE_LINE_PYTH_2PASS_EVAL_END, 2, pos_start, use_eval=True)
+            t = self._tokenize_python(TT_M.ONE_LINE_PYTH_2PASS_EVAL_END, 2, pos_start, use_eval=True)
 
         elif self._match(TT_M.MULTI_LINE_PYTH_2PASS_EVAL_START):
             # The rest of the line (or until '<?\\') is python for eval expression in second pass
-            t = self._parse_python(TT_M.MULTI_LINE_PYTH_2PASS_EVAL_END, 2, pos_start, use_eval=True)
+            t = self._tokenize_python(TT_M.MULTI_LINE_PYTH_2PASS_EVAL_END, 2, pos_start, use_eval=True)
 
         # Command --------------------------
         else:
             # It is a command, so parse it
-            t = self._parse_command()
+            t = self._tokenize_command()
 
         return t
 
-    def _parse_command(self):
+    def _tokenize_command(self):
         """
         Parse a command.
         """
@@ -361,7 +367,7 @@ class Tokenizer:
 
                 return tokens
 
-    def _parse_python(self, end_codes, pass_num, pos_start, use_eval=False):
+    def _tokenize_python(self, end_codes, pass_num, pos_start, use_eval=False):
         """
         Parses the string from self._pos as python code until one of the end_codes
             are reached.
@@ -389,14 +395,14 @@ class Tokenizer:
 
         if pass_num == 1:
             if use_eval:
-                return Token(TT.EVAL_PYTH1, python_str, pos_start, pos_end)
+                return Token(TT.PASS1EVAL, python_str, pos_start, pos_end)
             else:
-                return Token(TT.EXEC_PYTH1, python_str, pos_start, pos_end)
+                return Token(TT.PASS1EXEC, python_str, pos_start, pos_end)
         else:
             if use_eval:
-                return Token(TT.EVAL_PYTH2, python_str, pos_start, pos_end)
+                return Token(TT.PASS2EVAL, python_str, pos_start, pos_end)
             else:
-                return Token(TT.EXEC_PYTH2, python_str, pos_start, pos_end)
+                return Token(TT.PASS2EXEC, python_str, pos_start, pos_end)
 
     # -------------------------------------------------------------------------
     # Other Helper Methods
@@ -445,33 +451,157 @@ class Tokenizer:
 # -----------------------------------------------------------------------------
 # Nodes for Parser
 
+DUMMY_POSITION = Position(0, 0, 0, 'Dummy File Name', 'Dummy File Text')
+
 class LeafNode:
     """
-    Base class for all Leaf Nodes
+    Base class for all Leaf Nodes (nodes that can only have one token)
     """
-    __slots__ = ['token', 'start_pos', 'end_pos']
-    def __init__(self, token, start_pos=None, end_pos=None):
-        self.token = token
+    __slots__ = ['start_pos', 'end_pos']
+    def __init__(self, token):
+        """
+        Takes a token and sets the start and end positions using it. Still
+            must name the token in the actual node (i.e. self.writing, etc.)
+        """
+        self.start_pos = token.start_pos
+        self.end_pos = token.end_pos
 
-        if start_pos is not None:
-            self.start_pos = start_pos
-        else:
-            self.start_pos = self.token.start_pos
+class FileNode:
+    __slots__ = ['start_pos', 'end_pos', 'file_start', 'document', 'file_end']
+    def __init__(self, file_start, document, file_end):
+        self.file_start = file_start # Token
+        self.document = document # DocumentNode
+        self.file_end = file_end # Token
 
-        if end_pos is not None:
-            self.end_pos = end_pos
-        else:
-            self.end_pos = self.token.end_pos
+        self.start_pos = file_start.start_pos
+        self.end_pos = file_end.end_pos
 
     def __repr__(self):
-        return f'Node({self.token})'
+        return f'{self.__class__.__name__}({self.file_start}, {self.document}, {self.file_end})'
 
+class DocumentNode:
+    __slots__ = ['start_pos', 'end_pos', 'paragraph_break', 'paragraphs']
+    def __init__(self, paragraph_break, paragraphs):
+        self.paragraph_break = paragraph_break # Token
+        self.paragraphs = paragraphs # List of ParagraphNodes
 
+        if paragraph_break:
+            self.start_pos = paragraph_break.start_pos
+        elif len(paragraphs) > 0:
+            self.start_pos = paragraphs[0].start_pos
+        else:
+            self.start_pos = DUMMY_POSITION.copy()
+
+        if len(paragraphs) > 0:
+            self.end_pos = paragraphs.end_pos
+        elif paragraph_break:
+            self.end_pos = paragraph_break.end_pos
+        else:
+            self.end_pos = DUMMY_POSITION.copy()
+
+    def __repr__(self):
+        return f'{self.__class__.__name__}({self.paragraph_break}, {self.paragraphs})'
+
+class ParagraphNode:
+    __slots__ = ['start_pos', 'end_pos', 'writing', 'paragraph_break']
+    def __init__(self, writing, paragraph_break):
+        self.writing = writing # WritingNode
+        self.paragraph_break = paragraph_break # Token
+
+        self.start_pos = writing.start_pos
+
+        if paragraph_break:
+            self.end_pos = paragraph_break.end_pos
+        else:
+            self.end_pos = writing.end_pos
+
+    def __repr__(self):
+        return f'{self.__class__.__name__}({self.writing}, {self.paragraph_break})'
+
+class WritingNode(LeafNode):
+    __slots__ = __slots__[:]
+    __slots__.extend(['writing'])
+    def __init__(self, writing):
+        """
+        writing can be either a python node or a plain_text node.
+        """
+        super().__init__(writing)
+        self.writing = writing # PythonNode or PlainTextNode
+
+    def __repr__(self):
+        return f'{self.__class__.__name__}({self.writing})'
+
+class PythonNode(LeafNode):
+    __slots__ = __slots__[:]
+    __slots__.extend(['python'])
+    def __init__(self, python):
+        """
+        python is a single python node (PASS1EXEC|PASS2EXEC|PASS1EVAL|PASS2EVAL)
+        """
+        super().__init__(python)
+        self.python = python # Node
+
+    def __repr__(self):
+        return f'{self.__class__.__name__}({self.python})'
+
+class Python1stExecNode(PythonNode):
+    def __init__(self, python):
+        """
+        python is a single python Token (PASS1EXEC)
+        """
+        super().__init__(python)
+
+class Python1stEvalNode(PythonNode):
+    def __init__(self, python):
+        """
+        python is a single python Token (PASS1EVAL)
+        """
+        super().__init__(python)
+
+class Python2ndExecNode(PythonNode):
+    def __init__(self, python):
+        """
+        python is a single python Token (PASS2EVAL)
+        """
+        super().__init__(python)
+
+class Python2ndEvalNode(PythonNode):
+    def __init__(self, python):
+        """
+        python is a single python Token (PASS2EVAL)
+        """
+        super().__init__(python)
+
+class PlainTextNode(LeafNode):
+    __slots__ = __slots__[:]
+    __slots__.extend(['plain_text'])
+    def __init__(self, plain_text:list):
+        """
+        plain_text is a list of OCBRACE, CCBRACE, EQUAL_SIGN, and WORD Tokens
+            in any order.
+        """
+        self.plain_text = plain_text # list of Tokens
+
+        if len(plain_text) > 0:
+            self.start_pos = plain_text[0].start_pos
+            self.end_pos = plain_text[-1].end_pos
+        else:
+            self.start_pos = DUMMY_POSITION.copy()
+            self.end_pos = DUMMY_POSITION.copy()
 
 # -----------------------------------------------------------------------------
 # Parser Class and Related
 
 class ParseResult:
+    """
+    A class that wraps results from the Parser because the parser will be
+        trying out different things (is the next token plain text or a
+        paragraph break? neither? then whats the next thing it could be?) and
+        this ParseResult allows the Parser to try something and then undo that
+        thing. An error can also can be returned if none of the things that were
+        supposed to work actually work.
+    """
+    __slots__ = ['error', 'node', 'last_registered_advance_count', 'advance_count', 'to_reverse_count']
     def __init__(self):
         self.error = None
         self.node = None
@@ -480,16 +610,29 @@ class ParseResult:
         self.to_reverse_count = 0
 
     def register_advancement(self):
+        """
+        Registers that the Parser advanced a token so that that advancement
+            can be undone later if need be.
+        """
         self.last_registered_advance_count = 1
         self.advance_count += 1
 
     def register(self, res):
+        """
+        Registers a result, returning the error if there was one or
+            returning the node if the result wis successful.
+        """
         self.last_registered_advance_count = res.advance_count
         self.advance_count += res.advance_count
-        if res.error: self.error = res.error
+        if res.error:
+            self.error = res.error
         return res.node
 
-    def try_register(self, res):
+    def register_try(self, res):
+        """
+        Returns None if the given result did not work and the Node of
+            the result if it did.
+        """
         if res.error:
             self.to_reverse_count = res.advance_count
             return None
@@ -505,50 +648,318 @@ class ParseResult:
         return self
 
 class Parser:
+    """
+    Creates an Abstract Syntax Tree based on the rules in grammar.txt.
+
+    Look at grammar.txt for the outline of what the Parser is trying to do.
+        It takes each rule and recursively tries to make it work. When a rule
+        does not work, it returns a ParseResult with an error in
+        ParseResult.error. In the case of the error, the index is changed
+        back to what it was before the Parser tried the rule.
+        If there was no error, then the Node that was successfully created by
+        the rule is returned.
+
+    This Parser uses a top-down approach to parsing, as opposed to a bottom-up
+        approach to parsing, which is a far harder method of parsing to write
+        a Parser for.
+    """
     def __init__(self, tokens):
-        self.tokens = tokens
-        self.tok_idx = -1
-        self.advance()
-
-    def advance(self):
-        self.tok_idx += 1
-        self.update_current_tok()
-        return self.current_tok
-
-    def reverse(self, amount=1):
-        self.tok_idx -= amount
-        self.update_current_tok()
-        return self.current_tok
-
-    def update_current_tok(self):
-        if self.tok_idx >= 0 and self.tok_idx < len(self.tokens):
-            self.current_tok = self.tokens[self.tok_idx]
+        self._tokens = tokens
+        self._tok_idx = -1
+        self._advance()
 
     def parse(self):
-        res = self.statements()
-        if not res.error and self.current_tok.type != TT.FILE_END:
-            return res.failure(InvalidSyntaxError(
-                self.current_tok.pos_start, self.current_tok.pos_end,
-                "Token cannot appear after previous tokens"
-          ))
+        """
+        Returns a ParseResult with either an error in res.error or a node in
+            res.node
+        """
+        if self._current_tok.type == TT.FILE_START:
+            res = self._file()
+        else:
+            res = self._document()
         return res
 
     # ------------------------------
+    # Helper Methods
 
-    def document(self):
+    def _advance(self):
+        self._tok_idx += 1
+        self._update_current_tok()
+        return self._current_tok
+
+    def _reverse(self, amount=1):
+        self._tok_idx -= amount
+        self._update_current_tok()
+        return self._current_tok
+
+    def _update_current_tok(self):
+        if self._tok_idx >= 0 and self._tok_idx < len(self._tokens):
+            self._current_tok = self._tokens[self._tok_idx]
+        else:
+            # TT.NONE_LEFT will NOT match any Tokens needed for any rule,
+            #   forcing an error to occur in each rule and the rules to
+            #   terminate. This is much safer than just not changing the token
+            #   any more when you run out of tokens to parse because now, even if
+            #   you have a low-level rule that will accept infinitely many of a
+            #   token of a certain type, that type will not be infinitely given
+            #   if the list of tokens ends on it
+            if self._current_tok is not None:
+                self._current_tok = Token(TT.NONE_LEFT, 'NO TOKENS LEFT', self._current_tok.start_pos.copy(), self._current_tok.end_pos.copy())
+            else:
+                dummy_start_pos = DUMMY_POSITION.copy()
+                dummy_end_pos = dummy_start_pos.copy()
+                self._current_tok = Token(TT.NONE_LEFT, 'NO TOKENS LEFT', dummy_start_pos, dummy_end_pos)
+
+    # ------------------------------
+    # Rules
+
+    def _file(self):
+        res = ParseResult()
+        start_pos = self._current_tok.start_pos.copy()
+
+        if self._current_tok.type == TT.FILE_START:
+            file_start = self._current_tok
+            res.register_advancement()
+            self.advance()
+        else:
+            return res.failure(InvalidSyntaxError(start_pos, start_pos.copy().advance(),
+                    'For some reason, your file does not begin with a FILE_START Token. This is a Compiler Error, so contact the developer and let them know.'))
+
+        document = res.register(self.document())
+        if res.error: return res
+
+        if self._current_tok.type == TT.FILE_END:
+            file_end = self._current_tok
+            res.register_advancement()
+            self.advance()
+        else:
+            return res.failure(InvalidSyntaxError(start_pos, start_pos.copy().advance(),
+                    f'Reached the end of the file but there was no FILE_END Token. The file must have Invalid Syntax.'))
+
+        return res.success(FileNode(file_start, document, file_end))
+
+    def _document(self):
+        res = ParseResult()
+        paragraphs = []
+
+        paragraph_break = None
+        if self._current_tok.type == TT.PARAGRAPH_BREAK:
+            paragraph_break = self._current_tok
+            res.register_advancement()
+            self.advance()
+
+        while True:
+            # pargraph will be None if the try failed, otherwise it will be the
+            #   new ParagraphNode
+            paragraph = res.register_try(self._paragraph())
+
+            # If, when we tried to make another paragraph, it failed,
+            #   that means that there are no more paragraphs left in the
+            #   document, so undo the try by going back the number of
+            #   tokens that the try went forward
+            if paragraph is None:
+                self._reverse(res.to_reverse_count)
+                break
+            else:
+                paragraphs.append(paragraph)
+
+        return res.success(DocumentNode(paragraph_break, paragraphs))
+
+    def _paragraph(self):
+        res = ParseResult()
+
+        start_pos = self._current_tok.start_pos.copy()
+
+        writing = res.register_try(self._writing())
+        if writing is None:
+            self._reverse(res.to_reverse_count)
+            return res.failure(
+                        InvalidSyntaxError(start_pos, self._current_tok.end_pos.copy(),
+                            f'A Paragraph must have writing in it. This is not a Paragraph.')
+                    )
+
+        if self._current_tok.type == TT.PARAGRAPH_BREAK:
+            paragraph_break = self._current_tok
+            res.register_advancement()
+            self.advance()
+        else:
+            paragraph_break = None
+
+        # writing should be a WritingNode and paragraph_break is a Token of
+        #   type PARAGRAPH_BREAK
+        return res.success(ParagraphNode(writing, paragraph_break))
+
+    def _writing(self):
+        res = ParseResult()
+
+        start_pos = self._current_tok.start_pos.copy()
+
+        writing = res.register_try(self._python())
+
+        if writing is None:
+            self._reverse(res.to_reverse_count)
+
+            writing = res.register_try(self._plain_text())
+
+            if writing is None:
+                self._reverse(res.to_reverse_count)
+
+                return res.failure(InvalidSyntaxError(start_pos, self._current_tok.end_pos.copy(),
+                            f'Expected Python or PlainText here, but got neither.')
+                        )
+
+        # writing should be either a PythonNode or a PlainTextNode
+        return res.success(WritingNode(writing))
+
+    def _python(self):
+        res = ParseResult()
+
+        cc = self._current_tok
+        type = self._current_tok.type
+
+        # Python Switch Statement
+        python = None
+
+        if type == TT.PASS1EXEC:
+            python = Python1stExecNode(cc)
+        elif type == TT.PASS1EVAL:
+            python = Python1stEvalNode(cc)
+        elif type == TT.PASS2EXEC:
+            python = Python2ndExecNode(cc)
+        elif type == TT.PASS2EVAL:
+            python = Python2ndEvalNode(cc)
+
+        if python is None:
+            return res.failure(InvalidSyntaxError(cc.start_pos.copy(), cc.start_pos.copy().advance(),
+                    'Expected a Token of Type PASS1EXEC, PASS1EVAL, PASS2EXEC, or PASS1EVAL but did not get one.')
+                )
+
+        res.register_advancement()
+        self._advance()
+
+        # python should be a single python Token of type PASS1EXEC or PASS2EXEC
+        #   or PASS1EVAL or PASS2EVAL
+        return res.success(PythonNode(python))
+
+    def _plain_text(self):
+        res = ParseResult()
+        plain_text = []
+
+        while True:
+            cc = self._current_tok
+
+            # Python Switch Statement
+            try:
+                new_tok = {
+                    TT.BACKSLASH: cc,
+                    TT.OCBRACE: cc,
+                    TT.CCBRACE: cc,
+                    TT.EQUAL_SIGN: cc,
+                    TT.WORD: cc
+                }[cc.type]
+
+                # If I remember correctly, you cannot directly wrap the dict
+                #   in this append method because it appends the error
+                #   to the list when there is an error, which is problematic
+                plain_text.append(new_tok)
+            except ValueError:
+                break
+
+            res.register_advancement()
+            self._advance()
+
+        # plain_text is a list of OCBRACE, CCBRACE, EQUAL_SIGN, and WORD Tokens
+        #   in any order.
+        return res.success(PlainTextNode(plain_text))
+
+# -----------------------------------------------------------------------------
+# Interpreter and Related Classes
+
+class Context:
+    """
+    Provides Context for every command/amount of python code that is run. By
+        that I mean that the Context determines what commands and variables are
+        available and when.
+    """
+    def __init__(self, display_name, parent=None, parent_entry_pos=None):
+        self.display_name = display_name
+        self.parent = parent
+        self.parent_entry_pos = parent_entry_pos
+        self.commands_symbol_table = None
+        self.python_symbol_table = None
+
+class SymbolTable:
+    def __init__(self, parent=None):
+        self.symbols = {}
+        self.parent = parent
+
+    def get(self, name):
+        value = self.symbols.get(name, None)
+        if value == None and self.parent:
+          return self.parent.get(name)
+        return value
+
+    def set(self, name, value):
+        self.symbols[name] = value
+
+    def remove(self, name):
+        del self.symbols[name]
+
+class Interpreter:
+    """
+    The interpreter visits each node in the Abstract Syntax Tree generated
+        by the Parser and actually runs the corresponding code for the
+        node.
+    """
+    def __init__(self, compiler):
+        self._compiler = compiler
+
+    def visit(self, node, context):
+        method_name = f'_visit_{type(node).__name__}'
+        method = getattr(self, method_name, self.no_visit_method)
+        return method(node, context)
+
+    def _no_visit_method(self, node, context):
+        raise Exception(f'No _visit_{type(node).__name__} method defined in Interpreter')
+
+    # ------------------------------
+    # Rule Implementations
+
+    def _visit_FileNode(self, node, context):
+        self.visit(node.document, context)
+
+    def _visit_DocumentNode(self, node, context):
+        for paragraph in node.paragraphs:
+            self.visit(paragraph, context)
+
+    def _visit_ParagraphNode(self, node, context):
+        self.visit(node.writing, context)
+
+        if self.compiler.pass_num == 2 and node.paragraph_break is not None:
+            self.compiler.placer.new_paragraph()
+
+    def _visit_WritingNode(self, node, context):
+        self.visit(node.writing, context)
+
+    def _visit_PythonNode(self, node, context):
+        self.visit(node.python, context)
+
+    def _visit_Python1stExecNode(self, node, context):
         pass
 
-    def paragraph(self):
+    def _visit_Python1stEvalNode(self, node, context):
         pass
 
-    def writing(self):
+    def _visit_Python2ndExecNoded(self, node, context):
         pass
 
-    def python(self):
+    def _visit_Python2ndEvalNode(self, node, context):
         pass
 
-    def plain_text(self):
-        pass
+    def _visit_PlainTextNode(self, node, context):
+        if self.compiler.pass_num == 2:
+            self.compiler.placer.place_text(node.plain_text)
+
 
 # -----------------------------------------------------------------------------
 # Compiler Class
@@ -559,6 +970,8 @@ class Compiler:
         self._commands = {}
         self._files_by_path = {}
 
+        self.pass_num = 1 # Will be 2 when the compiler is making its second pass
+        self.placer = Placer()
         self._init_globals()
         self._init_commands()
 
@@ -568,7 +981,7 @@ class Compiler:
                 '__builtins__': _copy.deepcopy(globals()['__builtins__'].__dict__)}
 
         # Now remove any problematic builtins from the globals
-        rem_builtins = []
+        rem_builtins = ['sys']
         [self._globals['__builtins__'].__dict__.pop(key) for key in rem_builtins]
 
     def _init_commands(self):
@@ -582,7 +995,7 @@ class Compiler:
         """
         Compiles the PDF starting at self._start_file
         """
-        print(self._import_file(self._start_file).tokens)
+        file = self._import_file(self._start_file).tokens
 
     def add_command(self, cmnd_name, code_to_run, args:tuple=None, kwargs:dict=None):
         args = tuple() if args is None else args
@@ -609,11 +1022,20 @@ class Compiler:
             file.raw_text = f.read() # Raw text that the file contains
 
         file.tokens = Tokenizer(file.file_path, file.raw_text).tokenize()
+        file.ast = Parser(file.tokens).parse()
+
+        if file.ast.error is not None:
+            raise file.ast.error
+        else:
+            file.ast = file.ast.node
 
         return file
 
 
 class Command:
+    """
+    Represents a command in the file.
+    """
     def __init__(self, name:str, args:list, kwargs, content_tokens:list):
         self._name = name
         self._args = args
