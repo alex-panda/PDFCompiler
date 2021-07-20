@@ -1,0 +1,68 @@
+
+This is an example file showing off the basics of writing a file that can
+be compiled into a new PDF.
+
+One line of whitespace (as shown in the line above this line) mark the cutoff
+of a paragraph, A.K.A. a paragraph break.
+
+
+As long as there is at least one line of whitespace (technically two newline
+characters, if you know what those are) there will be one paragraph break.
+In other words, having more blank lines does not matter. They will only break
+your paragraph ones.
+
+
+
+
+Spaces and tabs do not matter.
+         This is in the same paragraph as the line before it because there is
+     not a line of whitespace inbetween this text
+                                and the text before it.
+
+Now, onto comments (you won't see them in the compiled PDF version of this
+document because they are commented out. That's the point---comments are only
+viewable in the plaintext document, not the compiled documents).
+
+
+\% This is a single-line comment...
+\# This is also a single-line comment (notice the "%" and "#" are interchangeable for comments)
+
+\# This is another comment on one line but the comment is ended before the new-line.#\
+\% This means that you can use a single line comment and still have text after it
+\% on the line. For example:
+
+\# Inside a comment #\ Outside a comment.
+
+\% There are also multi-line comments, as shown below.
+
+\%->
+This is a Multi-line comment because it has an arrow (->) after "\%" (an
+    arrow after "\#" would also work)
+
+Comments are ended using the backwards arrow (<-) and then either a "#\" or "%\"
+<-#\
+
+\#->
+This is also a
+Multi-line comment.
+<-%\
+
+\#->These allow you to comment out large blocks of text
+(so that you can have very large comments if you want to)<-#\
+
+\%->This is a multi-line comment (technically).<-%\
+\#->This is a multi-line comment (as far as the compiler is concerned).<-#\
+
+\#Empty single-line comments:
+\##\
+\#%\
+\%#\
+\%%\
+
+\%Empty multi-line comments:
+\#-><-#\
+\%-><-%\
+\%-><-#\
+\#-><-%\
+
+That is how comments work, please continue on to "commands.pdfo" to continue.

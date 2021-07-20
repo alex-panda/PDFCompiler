@@ -1,7 +1,7 @@
 from reportlab.lib.units import inch, cm, mm, pica, toLength
 from decimal import Decimal
 
-from constants import ALIGN
+from constants import ALIGN, TT
 from tools import assure_decimal
 from toolbox import ToolBox
 
@@ -64,7 +64,8 @@ class Placer:
         templates it is using.
     """
     def __init__(self):
-        self._default_page = PDFPageTemplate(self)
+        self._default_page = PDFPageTemplate()
+        self._broke_paragraph = True
 
     def default_page(self):
         return self._default_page
@@ -94,11 +95,34 @@ class Placer:
             and python code ignored and simply not written.
         """
 
+        for i, token in enumerate(text):
+
+            if token.type == TT.PARAGRAPH_BREAK:
+                self.new_paragraph()
+                continue
+
+            if self._broke_paragraph:
+                print('\t', end='')
+                self._broke_paragraph = False
+
+                print(f'{token.value}', end='')
+            else:
+                print(f' {token.value}', end='')
+
+    def new_paragraph(self):
+        """
+        Stop placing text in the old paragraph and reset everything for the new
+            paragraph.
+        """
+        self._broke_paragraph = True
+        print('\n', end='')
+        #print('\nNEW PARAGRAPH\n', end='')
+
 class Template:
-    def __init__(self, placer:Placer):
-        self._placer = placer
-        self._margins = Margins()
-        self._point = Point() # This is the placement of the upper-left-hand corner of the Template
+    def __init__(self):
+        self._margins = Margins() # The margins around the text for the template
+        self._alignment = None # The alignment of the text in the template
+        self._point = None # This is the placement of the upper-left-hand corner of the Template
         self._being_used = False
         self._use_times_left = None
 
@@ -137,9 +161,22 @@ class Template:
     def margins(self):
         """
         The margins for the template. They determine how boxed in it is, and
-            they are additive. So if you
+            they are additive. So if you specify the margins of the
+            page and the paragraph, the margins of the page are added to the
+            paragraph to affect the text
         """
         return self._margins
+
+    def alignment(self):
+        return self._alignment
+
+    def set_alignment(self, new_alignment):
+        if not isinstance(new_alignment, ALIGN):
+            if isinstance(new_alignment, str):
+                new_alignment = toolbox.alignments_by_name(new_alignment)
+            else:
+                raise TypeError(f'You tried to set the alignment of the text to {new_alignment}, which is not in the ALIGN Enum required.')
+        self._align = new_alignment
 
     def copy(self, recursive=False):
         """
@@ -179,7 +216,7 @@ class Word:
     """
     def __init__(self, text):
         self._text = text
-        self._point = Point() # all words start at (0, 0) on the canvas
+        self._point = None
         self._font = None
         self._color = None
 
@@ -224,6 +261,7 @@ class PDFPageTemplate(Template):
     def __init__(self):
         super().__init__()
         self.margins().set_all(1*inch, 1*inch, 1*inch, 1*inch)
+        self._alignment = ALIGN.LEFT
 
         self._default_paragraph = PDFParagraphTemplate()
 
@@ -238,6 +276,14 @@ class PDFPageTemplate(Template):
         """
         self._default_paragraph._place_word(word)
 
+    def copy(self):
+        new_page = PDFParagraphTemplate()
+        new_page.mangins.set_all(*self.margins().get_all())
+        new_page._alignment = self._alignment
+        new_page._page_index = self._page_index
+        new_page._default_paragraph = self._default_paragraph.copy()
+        return new_page
+
 class PDFParagraphTemplate(Template):
     """
     Describes how a paragraph should look. It does not contain text,
@@ -246,7 +292,6 @@ class PDFParagraphTemplate(Template):
     def __init__(self):
         super().__init__()
         self._default_paragraph_line = PDFParagraphLineTemplate()
-        self._alignment = ALIGN.LEFT
         self._curr_line_index = 0
 
         # Paragraphs also have margins that will be added to the margins
@@ -274,16 +319,14 @@ class PDFParagraphTemplate(Template):
         """
         return self._alignment
 
-    def set_alignment(self, new_alignment):
-        if not isinstance(new_alignment, ALIGN):
-            if isinstance(new_alignment, str):
-                new_alignment = toolbox.alignments_by_name(new_alignment)
-            else:
-                raise TypeError(f'You tried to set the alignment of the text to {new_alignment}, which is not in the ALIGN Enum required.')
-        self._align = new_alignment
-
     def _place_word(self, word:Word):
         self._default_paragraph_line._place_word(word)
+
+    def copy(self):
+        new_par = PDFParagraphTemplate()
+        new_par._default_paragraph_line = self._default_paragraph_line.copy()
+        new_par._curr_line_index = self._curr_line_index
+        return new_par
 
 class PDFParagraphLineTemplate(Template):
     def __init__(self):
@@ -303,6 +346,11 @@ class PDFParagraphLineTemplate(Template):
     def _place_word(self, word:Word):
         self._default_word._place_word(word)
 
+    def copy(self):
+        new_line = PDFParagraphLineTemplate()
+        new_line._default_word = self._default_word.copy()
+        return new_line
+
 class PDFWordTemplate(Template):
     """
     A template for each word in a Line of a Paragraph of a Page in the PDF.
@@ -313,11 +361,15 @@ class PDFWordTemplate(Template):
     def _place_word(self, word:Word):
         pass
 
+    def copy(self):
+        new_word = PDFWordTemplate()
+        return new_word
+
 class Margins:
     """
     Describes the margins of something.
     """
-    def __init__(self, left=0, right=0, top=0, bottom=0):
+    def __init__(self, left=-1, right=-1, top=-1, bottom=-1):
         self.set_all(left, right, top, bottom)
 
     def left(self):

@@ -8,6 +8,7 @@ from reportlab.lib.units import inch, cm, mm, pica, toLength
 from reportlab.lib import units, colors, pagesizes as pagesizes
 
 from tools import assure_decimal, is_escaped, is_escaping, exec_python, eval_python, string_with_arrows
+from constants import ALIGN
 
 PAGE_SIZES = ( \
         'A0', 'A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8', 'A9', 'A10',

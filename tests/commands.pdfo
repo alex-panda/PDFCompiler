@@ -1,0 +1,35 @@
+This is a file all about commands.
+
+What are commands?
+
+They allow you to mark up your text---to "command" it to be a certain way or
+have something happen to it.
+
+For example:
+
+\\b{} will \b{bold any text you put inbetween its two curly brackets "{}".}
+\\i{} will \i{italicise any text you put inbetween its two curly brackets.}
+\\u{} will \u{underline any text you put inbetween its two curly brackets.}
+
+This is the pattern of all commands. You do \\, then the name of the cammand
+you want to do, and then put the text you want to do it to in between the
+command's curly-brackets "{}".
+
+Some commands need more than one thing between curly brackets in order to work.
+
+For example:
+
+\\font{Times New Roman}{}
+
+Changes the text in the second set of curly brackets to be in Times New Roman font.
+This can  be done like so:
+
+\font{Times New Roman}{This text is in Times New Roman.}
+
+If you are looking at the plaintext version of this file, then you will notice
+that I've been putting two backslashes "\\" every time I need to type one.
+That is because one backslash symbolizes that there must be a command after it,
+but by putting two I am saying "no, there is no command here, I just want a single
+backslash to be displayed here in the PDF version of this file."
+
+

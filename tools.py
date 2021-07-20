@@ -38,21 +38,38 @@ def is_escaping(pos, text, chars_that_can_be_escaped):
         return True
     return False
 
+def trim(string):
+    """
+    Returns a version of the given string with the white sapace on either side
+        of it trimmed off.
+    """
 
-def exec_python(code, exec_globals):
+def exec_python(code, exec_globals:dict):
     """
     Executes python code and returns the value stored in 'ret' if it was
         specified as a global variable.
     """
-    exec(code, exec_globals)
+    try:
+        exec(code, exec_globals)
+    except Exception as e:
+        return e
+
     if 'ret' in exec_globals:
-        return exec_globals.pop('ret')
+        return str(exec_globals.pop('ret'))
     else:
-        return ''
+        return None
 
 
-def eval_python(code:str, exec_globals:dict):
-    return eval(code)
+def eval_python(code:str, eval_globals:dict):
+    """
+    Avaluates Python and returns a string of the output.
+    """
+    try:
+        res = eval(code, eval_globals)
+    except Exception as e:
+        return e
+
+    return str(res)
 
 
 def string_with_arrows(text, pos_start, pos_end):
