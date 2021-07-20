@@ -1,28 +1,28 @@
 -------------------------------------------------------------------------------
 The Grammar right now:
 
-RULE_NAME       : RULE_DESCRIPTION
+RULE_NAME    : RULE_DESCRIPTION
 
-file            : FILE_START document FILE_END
+file         : FILE_START document FILE_END
 
-document        : PARAGRAPH_BREAK? paragraphs*
+document     : PARAGRAPH_BREAK? paragraphs* PARAGRAPH_BREAK?
 
-paragraph       : writing PARAGRAPH_BREAK?
+paragraph    : PARAGRAPH_BREAK? writing
 
-writing         : python|plain_text
+writing      : python|plain_text
 
-python          : PASS1EVAL|PASS1EXEC|PASS2EVAL|PASS2EXEC
+python       : PASS1EVAL|PASS1EXEC|PASS2EVAL|PASS2EXEC
 
-plain_text      : (OCBRACE|CCBRACE|EQUAL_SIGN|WORD)+
+plain_text   : (OCBRACE|CCBRACE|EQUAL_SIGN|WORD)+
 
 -------------------------------------------------------------------------------
 The Grammar in the Future:
 
 file         : FILE_START document FILE_END
 
-document     : PARAGRAPH_BREAK? paragraphs*
+document     : PARAGRAPH_BREAK? paragraphs* PARAGRAPH_BREAK?
 
-paragraph    : writing PARAGRAPH_BREAK?
+paragraph    : PARAGRAPH_BREAK? writing
 
 writing      : python|cmnd_call|plain_text
 
@@ -30,7 +30,7 @@ python       : PASS1EXEC|PASS2EXEC|PASS1EVAL|PASS2EVAL
 
 plain_text   : (OCBRACE|CCBRACE|EQUAL_SIGN|WORD)+
 
-cmnd_call    : CMND_NAME (cmnd_exp* (cmnd_key_exp*)?)?
+cmnd_call    : CMND_NAME (cmnd_exp|cmnd_key_exp)*
 
 cmnd_exp     : LCBRACE paragraph* RCBRACE
 
@@ -49,8 +49,9 @@ Note: In "writing", the rules must be parsed in that order because they go
     tokens, then cmnd_call accepts more types of tokens, and then plain_text
     accepts the most types of tokens).
 
-Note: When putting text on the PDF, the PARAGRAPH_BREAK in "document" is always
-    ignored.
+Note: When putting text on the PDF, the two PARAGRAPH_BREAKs in "document" are
+    always ignored. They just exist so that there will not be a paragraph
+    break at the start of a PDF document or at the end of one.
 
 Note: When putting text on the PDF, "paragraph" will only honor the
     PARAGRAPH_BREAK if "writing" is not an empty string, otherwise the

@@ -115,7 +115,7 @@ class Placer:
             paragraph.
         """
         self._broke_paragraph = True
-        print('\n', end='')
+        print('\n------------\n', end='')
         #print('\nNEW PARAGRAPH\n', end='')
 
 class Template:

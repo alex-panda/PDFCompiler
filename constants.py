@@ -42,7 +42,7 @@ class TT(Enum):
 
     PARAGRAPH_BREAK = 'PARAGRAPH BREAK'
 
-    CMND_NAME = 'COMMAND NAME'
+    IDENTIFIER = 'IDENTIFIER'
 
     FILE_START = 'FILE START'
     FILE_END = 'FILE END'
@@ -52,8 +52,8 @@ class TT(Enum):
     NONE_LEFT = 'NONE_LEFT' # For Parser when there are no more Tokens to parse
 
 END_LINE_CHARS = ('\r', '\n', '\f') # White space that would start a new line/paragraph
-NON_END_LINE_WHITE_SPACE = (' ', '\t', '\v') # White space that would not start a new line/paragraph
-WHITE_SPACE = (' ', '\t', '\n', '\r', '\f', '\v') # all white space
+NON_END_LINE_CHARS = (' ', '\t', '\v') # White space that would not start a new line/paragraph
+WHITE_SPACE_CHARS = (' ', '\t', '\n', '\r', '\f', '\v') # all white space
 
 def nl(*args):
     """

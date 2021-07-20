@@ -10,7 +10,7 @@ from decimal import Decimal
 from reportlab.lib.units import inch, cm, mm, pica, toLength
 from reportlab.lib import units, colors, pagesizes as pagesizes
 
-from constants import CMND_CHARS, END_LINE_CHARS, ALIGN, TT, TT_M, WHITE_SPACE, NON_END_LINE_WHITE_SPACE
+from constants import CMND_CHARS, END_LINE_CHARS, ALIGN, TT, TT_M, WHITE_SPACE_CHARS, NON_END_LINE_CHARS
 from tools import assure_decimal, is_escaped, is_escaping, exec_python, eval_python, string_with_arrows
 from placer import Placer
 
@@ -98,7 +98,7 @@ class Position:
         self.idx += 1
         self.col += 1
 
-        if current_char == '\n':
+        if current_char in END_LINE_CHARS:
             self.ln += 1
             self.col = 0
 
@@ -206,13 +206,13 @@ class Tokenizer:
 
         curr_word = ''
         while cc is not None:
-            if cc in NON_END_LINE_WHITE_SPACE:
+            if cc in NON_END_LINE_CHARS:
                 cc, idx = next_tok(idx)
 
                 try_append_word(curr_word)
                 curr_word = ''
 
-                while (cc is not None) and (cc in NON_END_LINE_WHITE_SPACE):
+                while (cc is not None) and (cc in NON_END_LINE_CHARS):
                     cc, idx, = next_tok(idx)
 
                 continue
@@ -274,7 +274,7 @@ class Tokenizer:
                         pass # Do nothing, just eat the END_LINE_CHARS now that we know that there is a PARAGRAPH_BREAK
 
                     t = Token(TT.PARAGRAPH_BREAK, None, pos_start, self._pos.copy())
-            elif cc in NON_END_LINE_WHITE_SPACE:
+            elif cc in NON_END_LINE_CHARS:
                 self._try_word_token()
                 self._advance()
             elif cc == '{':
@@ -475,13 +475,14 @@ class Tokenizer:
                 self._advance()
             else:
                 if len(cmnd_name) == 0:
-                    curr_idx = self._pos.idx
-                    self._advance()
 
                     raise ExpectedValidCmndNameError(problem_start, self._pos.copy(),
                             f'All commands must specify a valid name with all characters of it in {CMND_CHARS} "{self._text[curr_idx]}" is not one of them. You either forgot to designate a valid command name or forgot to escape the backslash before this character.')
 
-                tokens.append(Token(TT.CMND_NAME, cmnd_name, start_pos, start_pos))
+                curr_idx = self._pos.idx
+                self._advance()
+
+                tokens.append(Token(TT.IDENTIFIER, cmnd_name, start_pos, start_pos))
 
                 return tokens
 
@@ -563,22 +564,25 @@ class FileNode:
         return f'{self.__class__.__name__}({self.file_start}, {self.document}, {self.file_end})'
 
 class DocumentNode:
-    __slots__ = ['start_pos', 'end_pos', 'paragraph_break', 'paragraphs']
-    def __init__(self, paragraph_break, paragraphs):
-        self.paragraph_break = paragraph_break # Token
+    __slots__ = ['start_pos', 'end_pos', 'starting_paragraph_break', 'paragraphs', 'ending_paragraph_break']
+    def __init__(self, starting_paragraph_break, paragraphs, ending_paragraph_break):
+        self.starting_paragraph_break = starting_paragraph_break # Token
         self.paragraphs = paragraphs # List of ParagraphNodes
+        self.ending_paragraph_break = ending_paragraph_break # Token
 
-        if paragraph_break:
-            self.start_pos = paragraph_break.start_pos
+        if starting_paragraph_break:
+            self.start_pos = starting_paragraph_break.start_pos
         elif len(paragraphs) > 0:
             self.start_pos = paragraphs[0].start_pos
         else:
             self.start_pos = DUMMY_POSITION.copy()
 
         if len(paragraphs) > 0:
-            self.end_pos = paragraphs[0].end_pos
-        elif paragraph_break:
-            self.end_pos = paragraph_break.end_pos
+            self.end_pos = paragraphs[-1].end_pos
+        elif ending_paragraph_break:
+            self.end_pos = ending_paragraph_break.end_pos
+        elif starting_paragraph_break:
+            self.end_pos = starting_paragraph_break.end_pos
         else:
             self.end_pos = DUMMY_POSITION.copy()
 
@@ -587,9 +591,9 @@ class DocumentNode:
 
 class ParagraphNode:
     __slots__ = ['start_pos', 'end_pos', 'writing', 'paragraph_break']
-    def __init__(self, writing, paragraph_break):
-        self.writing = writing # WritingNode
+    def __init__(self, paragraph_break, writing):
         self.paragraph_break = paragraph_break # Token
+        self.writing = writing # WritingNode
 
         self.start_pos = writing.start_pos
 
@@ -613,6 +617,10 @@ class WritingNode(LeafNode):
 
     def __repr__(self):
         return f'{self.__class__.__name__}({self.writing})'
+
+class CommandCallNode(LeafNode):
+    __slots__ = LeafNode.__slots__[:]
+    __slots__.extend(['writing'])
 
 class PythonNode(LeafNode):
     __slots__ = LeafNode.__slots__[:]
@@ -807,7 +815,7 @@ class Parser:
         res = ParseResult()
         paragraphs = []
 
-        paragraph_break = self._paragraph_break(res)
+        starting_paragraph_break = self._paragraph_break(res)
 
         while True:
             # pargraph will be None if the try failed, otherwise it will be the
@@ -824,12 +832,17 @@ class Parser:
             else:
                 paragraphs.append(paragraph)
 
-        return res.success(DocumentNode(paragraph_break, paragraphs))
+        ending_paragraph_break = self._paragraph_break(res)
+
+        return res.success(DocumentNode(starting_paragraph_break, paragraphs, ending_paragraph_break))
 
     def _paragraph(self):
         res = ParseResult()
 
         start_pos = self._current_tok.start_pos.copy()
+
+        # Check for Paragraph Break
+        paragraph_break = self._paragraph_break(res)
 
         # Check for Writing
         writing = res.register_try(self._writing())
@@ -841,12 +854,9 @@ class Parser:
                             f'A Paragraph must have writing in it. This is not a Paragraph.')
                     )
 
-        # Check for Paragraph Break
-        paragraph_break = self._paragraph_break(res)
-
         # writing should be a WritingNode and paragraph_break is a Token of
         #   type PARAGRAPH_BREAK
-        return res.success(ParagraphNode(writing, paragraph_break))
+        return res.success(ParagraphNode(paragraph_break, writing))
 
     def _writing(self):
         res = ParseResult()
@@ -953,23 +963,39 @@ class Parser:
 # -----------------------------------------------------------------------------
 # Interpreter and Related Classes
 
-class Context:
+class RunTimeResult:
     """
-    Provides Context for every command/amount of python code that is run. By
-        that I mean that the Context determines what commands and variables are
-        available and when.
+    Wraps a return value in the Interpreter so that, when a visit method
+        finishes visiting a Node, it can tell the Node that visited it various
+        things such as whether to return immediately or not.
     """
-    def __init__(self, display_name, parent=None, parent_entry_pos=None):
-        """
-        Context could be a function if in a function or the entire program
-            (global) if not in a function.
-        """
-        self.display_name = display_name # the function/program name
-        self.parent = parent # Parent context if there is one
-        self.parent_entry_pos = parent_entry_pos # the position in the code where the context changed (where was the function called)
+    def __init__(self):
+        self.reset()
 
-        self.commands_symbol_table = None
-        self.python_symbol_table = None
+    def reset(self):
+        self.value = None
+        self.error = None
+
+    def register(self, res):
+        """
+        Register the returned result from a Node you just visited. This way,
+            if you should return because an error occured or something, you can.
+        """
+        self.error = res.error
+        return res.value
+
+    def success(self, value):
+        self.reset()
+        self.value = value
+        return self
+
+    def failure(self, error):
+        self.reset()
+        self.error = error
+        return self
+
+    def contains_error(self):
+        return (self.error is not None)
 
 class SymbolTable:
     def __init__(self, parent=None):
@@ -986,150 +1012,136 @@ class SymbolTable:
         self.symbols[name] = value
 
     def remove(self, name):
-        del self.symbols[name]
+        self.symbols.pop(name)
 
-class RunTimeResult:
+class Context:
     """
-    Wraps a return value in the Interpreter so that, when a visit method
-        finishes visiting a Node, it can tell the Node that visited it various
-        things such as whether to return immediately or not.
+    Provides Context for every command/amount of python code that is run. By
+        that I mean that the Context determines what commands and variables are
+        available and when.
     """
-    def __init__(self):
-        self.reset()
-
-    def reset(self):
-        self.value = None
-        self.error = None
-        self.func_return_value = None
-        self.loop_should_continue = False
-        self.loop_should_break = False
-
-    def register(self, res):
+    def __init__(self, display_name, parent=None, parent_entry_pos=None, globals=None, locals={}):
         """
-        Register the returned result from a Node you just visited. This way,
-            if you should return because an error occured or something, you can.
+        Context could be a function if in a function or the entire program
+            (global) if not in a function.
         """
-        self.error = res.error
-        self.func_return_value = res.func_return_value
-        self.loop_should_continue = res.loop_should_continue
-        self.loop_should_break = res.loop_should_break
-        return res.value
+        self.display_name = display_name # the function/program name
+        self.parent = parent # Parent context if there is one
+        self.parent_entry_pos = parent_entry_pos # the position in the code where the context changed (where was the function called)
 
-    def success(self, value):
-        self.reset()
-        self.value = value
-        return self
+        self._globals = globals
+        self._locals = locals
 
-    def success_return(self, value):
-        self.reset()
-        self.func_return_value = value
-        return self
+        self.commands_symbol_table = None
 
-    def success_continue(self):
-        self.reset()
-        self.loop_should_continue = True
-        return self
+    @property
+    def globals(self):
+        if self._globals:
+            return self._globals
+        elif self.parent:
+            return self.parent.globals
+        else:
+            Exception("You did not pass in globals to the Global Context.")
 
-    def success_break(self):
-        self.reset()
-        self.loop_should_break = True
-        return self
-
-    def failure(self, error):
-        self.reset()
-        self.error = error
-        return self
-
-    def contains_error(self):
-        return (self.error is not None)
-
-    def should_return(self):
-        # Note: this will allow you to continue and break outside the current function
-        return (
-          self.error or
-          self.func_return_value or
-          self.loop_should_continue or
-          self.loop_should_break
-        )
+    @property
+    def locals(self):
+        return self._locals
 
 class InterpreterFlags:
     """
-    Flags for the Interpreter so that it can know what to do when an AST is
-        passed to it.
+    Flags for the Interpreter so that it can know what to do when it does
+        a pass over an Abstract Syntax Tree created by the Parser.
+
+    The difference between these flags and the context in the Interpreter is
+        that things in the flags stay the same for the entire AST pass
+        whereas the things in the context could change at each visit to a node.
     """
-    def __init__(self, pass_num=1, placer=None, file=None):
+    def __init__(self, pass_num=1, placer=None):
         self.pass_num = pass_num # what pass this is in the compile
         self.placer = placer # will be None if no text is supposed to be placed on a PDF
-
 
 class Interpreter:
     """
     The interpreter visits each node in the Abstract Syntax Tree generated
         by the Parser and actually runs the corresponding code for the
         node.
-
-    What is returned by each visit is what the visited node wants the parent
-        node to set as its node.
     """
-    def __init__(self, compiler):
-        self._compiler = compiler
-
-    def visit(self, node, context):
+    @staticmethod
+    def visit(node, context, flags):
         method_name = f'_visit_{type(node).__name__}'
-        method = getattr(self, method_name, self._no_visit_method)
-        return method(node, context)
+        method = getattr(Interpreter, method_name, Interpreter._no_visit_method)
+        return method(node, context, flags)
 
-    def _no_visit_method(self, node, context):
+    @staticmethod
+    def _no_visit_method(node, context, flags):
         raise Exception(f'No _visit_{type(node).__name__} method defined in Interpreter')
 
     # ------------------------------
     # Rule Implementations
 
-    def _visit_FileNode(self, node, context):
+    @staticmethod
+    def _visit_FileNode(node, context, flags):
         res = RunTimeResult()
-        result = res.register(self.visit(node.document, context))
+        result = res.register(Interpreter.visit(node.document, context, flags))
 
         if res.contains_error():
             return res
 
         return res.success(result)
 
-    def _visit_DocumentNode(self, node, context):
+    @staticmethod
+    def _visit_DocumentNode(node, context, flags):
         res = RunTimeResult()
 
         for paragraph in node.paragraphs:
-            res.register(self.visit(paragraph, context))
+            res.register(Interpreter.visit(paragraph, context, flags))
 
             if res.contains_error():
                 return res
 
         return res
 
-    def _visit_ParagraphNode(self, node, context):
+    @staticmethod
+    def _visit_ParagraphNode(node, context, flags):
         res = RunTimeResult()
 
         # Visit the writing (could be Plaintext, Python, or a Command call)
-        written_str = res.register(self.visit(node.writing, context))
+        write_str = res.register(Interpreter.visit(node.writing, context, flags))
 
         if res.contains_error():
             return res
 
-        # No new line if the writing node did not produce any new plaintext
-        if written_str == '':
-            return res.success(written_str)
+        if flags.pass_num == 2 and flags.placer:
+            if isinstance(write_str, str):
+                plaintext_tokens = Tokenizer.plaintext_tokens_for_str(write_str)
+            else:
+                # write string must be plaintext Tokens already.
+                plaintext_tokens = write_str
 
-        if self._compiler._pass_num == 2 and node.paragraph_break is not None:
-            self._compiler._placer.new_paragraph()
+            if len(plaintext_tokens) > 0:
+                if node.paragraph_break:
+                    flags.placer.new_paragraph()
+                flags.placer.place_text(plaintext_tokens)
 
-        return res.success(written_str)
+        return res.success(write_str)
 
-    def _visit_WritingNode(self, node, context):
+    @staticmethod
+    def _visit_WritingNode(node, context, flags):
+        """
+        Visits a WritingNode. If successful, this method will return a string of
+            what the ParagraphNode is supposed to write.
+        """
         res = RunTimeResult()
-        written_str = res.register(self.visit(node.writing, context))
-        if res.contains_error(): return res
-        return res.success(written_str)
+        write_str = res.register(Interpreter.visit(node.writing, context, flags))
 
-    def _visit_PythonNode(self, node, context):
+        # Error Handling
+        if res.contains_error():
+            return res
+
+        return res.success(write_str)
+
+    @staticmethod
+    def _visit_PythonNode(node, context, flags):
         res = RunTimeResult()
         python_token = node.python
         tt = python_token.type
@@ -1139,46 +1151,43 @@ class Interpreter:
         # Execute or eval python so that anything in it can be placed on
         #   the PDF when this node is visited the 2nd time.
         if tt == TT.PASS1EXEC:
-            python_result = exec_python(python_token.value, self._compiler._globals)
+            python_result = exec_python(python_token.value, context.globals, context.locals)
         elif tt == TT.PASS1EVAL:
-            python_result = eval_python(python_token.value, self._compiler._globals)
+            python_result = eval_python(python_token.value, context.globals, context.locals)
 
         # Execute or eval python and have it placed on the PDF now
         elif tt == TT.PASS2EXEC:
-            if self._compiler._pass_num == 2:
-                python_result = exec_python(python_token.value, self._compiler._globals)
+            if flags.pass_num == 2:
+                python_result = exec_python(python_token.value, context.globals, context.locals)
         elif tt == TT.PASS2EVAL:
-            if self._compiler._pass_num == 2:
-                python_result = eval_python(python_token.value, self._compiler._globals)
+            if flags.pass_num == 2:
+                python_result = eval_python(python_token.value, context.globals, context.locals)
         else:
-            raise Exception(f"The following token was found in a PythonNode, it is not supposed to be in a PythonNode: {python}")
+            raise Exception(f"The following token was found in a PythonNode, it is not supposed to be in a PythonNode: {tt}")
 
 
         # exec_python and eval_python functions only return either a string
         #   or None. None if nothing was returned by the exec_function,
         #   otherwise a string version of what was returned. Thus, if one of the
-        #   functions was run, then python_result will be not be 0
+        #   functions was run, then python_result will NOT be 0
         if python_result != 0:
             node.python_string = python_result
 
         if isinstance(python_result, Exception) or issubclass(type(python_result), Exception):
             return res.failure(PythonException(node.start_pos.copy(), node.end_pos.copy(), 'An error occured while running your Python code.', python_result, context))
 
-        elif node.python_string is not None and self._compiler._pass_num == 2:
-            plaintext_tokens = Tokenizer.plaintext_tokens_for_str(node.python_string)
-
-            if len(plaintext_tokens) > 0:
-                self._compiler._placer.place_text(plaintext_tokens)
-
-            return res.success(node.python_string)
+        elif node.python_string is not None and flags.pass_num == 2 and flags.placer:
+            python_string = node.python_string
+            node.python_string = None # Reset the node for if the tree is parsed again
+            return res.success(python_string)
 
         return res
 
-    def _visit_PlainTextNode(self, node, context):
+    @staticmethod
+    def _visit_PlainTextNode(node, context, flags):
         res = RunTimeResult()
 
-        if self._compiler._pass_num == 2:
-            self._compiler._placer.place_text(node.plain_text)
+        if flags.pass_num == 2 and flags.placer:
             res.success(node.plain_text)
 
         return res
@@ -1193,8 +1202,6 @@ class Compiler:
         self._commands = {}
         self._files_by_path = {}
 
-        self._pass_num = 1 # Will be 2 when the compiler is making its second pass
-        self._interpreter = Interpreter(self)
         self._placer = Placer()
         self._init_globals()
         self._init_commands()
@@ -1220,13 +1227,14 @@ class Compiler:
         Compiles the PDF starting at self._start_file
         """
         file = self._import_file(self._start_file)
-        result = self._interpreter.visit(file.ast, Context(file.file_path))
+        pass_1_flags = InterpreterFlags(1, self._placer)
+        result = Interpreter.visit(file.ast, Context(file.file_path, globals=self._globals), pass_1_flags)
 
         if result.contains_error():
             raise result.error
 
-        self._pass_num = 2
-        result = self._interpreter.visit(file.ast, Context(file.file_path))
+        pass_2_flags = InterpreterFlags(2, self._placer)
+        result = Interpreter.visit(file.ast, Context(file.file_path, globals=self._globals), pass_2_flags)
 
         if result.contains_error():
             raise result.error
