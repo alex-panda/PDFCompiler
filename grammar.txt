@@ -46,8 +46,8 @@ Legend:
 
 Note: In "writing", the rules must be parsed in that order because they go
     from narrowest to broadest (as in, python statements accept very specific
-    tokens, then cmnd_call accepts more tokens, and then plain_text accepts
-    the most types of tokens).
+    tokens, then cmnd_call accepts more types of tokens, and then plain_text
+    accepts the most types of tokens).
 
 Note: When putting text on the PDF, the PARAGRAPH_BREAK in "document" is always
     ignored.
@@ -55,3 +55,4 @@ Note: When putting text on the PDF, the PARAGRAPH_BREAK in "document" is always
 Note: When putting text on the PDF, "paragraph" will only honor the
     PARAGRAPH_BREAK if "writing" is not an empty string, otherwise the
     PARAGRAPH_BREAK will be ignored.
+

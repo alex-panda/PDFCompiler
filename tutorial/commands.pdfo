@@ -115,8 +115,9 @@ Here is a full list of the basic commands available in every file by default:
         arguments and key-word arguments, which will run the given code when
         the command is run. If you do not understand what any of that means,
         look at the "defining_commands.pdfo" file of the tutorial. It has a
-        far longer and more digestible explenation. This command will throw
-        an error if the command_name is already in use.
+        far longer and more digestible explenation. By the way, this command
+        will throw an error if the command_name is already in use. That is
+        why it is called "new" command.
 
     \\renewcommand is the same as newcommand (and with the same arguments and
         keyword arguments) but throws an error if the command_name has NOT

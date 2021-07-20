@@ -53,13 +53,13 @@ Multi-line comment.
 \%->This is a multi-line comment (technically).<-%\
 \#->This is a multi-line comment (as far as the compiler is concerned).<-#\
 
-\#Empty single-line comments:
+\# Empty single-line comments:
 \##\
 \#%\
 \%#\
 \%%\
 
-\%Empty multi-line comments:
+\% Empty multi-line comments:
 \#-><-#\
 \%-><-%\
 \%-><-#\

@@ -725,6 +725,7 @@ class Parser:
     def __init__(self, tokens):
         self._tokens = tokens
         self._tok_idx = -1
+        self._current_tok = None
         self._advance()
 
     def parse(self):
@@ -739,17 +740,26 @@ class Parser:
         return res
 
     # ------------------------------
-    # Helper Methods
+    # Main Helper Methods
 
-    def _advance(self):
+    def _advance(self, parse_result=None):
+        """
+        Advances to the next token. It returns the token before the new one and
+            registers an advancement with the given parse_result for convenience.
+        """
+        prev_token = self._current_tok
+
+        if parse_result:
+            parse_result.register_advancement()
+
         self._tok_idx += 1
         self._update_current_tok()
-        return self._current_tok
+
+        return prev_token
 
     def _reverse(self, amount=1):
         self._tok_idx -= amount
         self._update_current_tok()
-        return self._current_tok
 
     def _update_current_tok(self):
         if self._tok_idx >= 0 and self._tok_idx < len(self._tokens):
@@ -777,9 +787,7 @@ class Parser:
         start_pos = self._current_tok.start_pos.copy()
 
         if self._current_tok.type == TT.FILE_START:
-            file_start = self._current_tok
-            res.register_advancement()
-            self._advance()
+            file_start = self._advance(res)
         else:
             return res.failure(InvalidSyntaxError(start_pos, start_pos.copy().advance(),
                     'For some reason, your file does not begin with a FILE_START Token. This is a Compiler Error, so contact the developer and let them know.'))
@@ -787,24 +795,8 @@ class Parser:
         document = res.register(self._document())
         if res.error: return res
 
-        #print(f'ALL_TOKENS: {self._tokens}\n')
-
-        #print(f'CURR_TOKEN: {self._current_tok}')
-        #self._advance()
-        #print(f'NEXT_TOKEN: {self._current_tok}')
-        #self._advance()
-        #print(f'NEXT_TOKEN: {self._current_tok}')
-        #self._advance()
-        #print(f'NEXT_TOKEN: {self._current_tok}')
-        #self._advance()
-        #print(f'NEXT_TOKEN: {self._current_tok}')
-        #self._advance()
-        #print(f'NEXT_TOKEN: {self._current_tok}')
-
         if self._current_tok.type == TT.FILE_END:
-            file_end = self._current_tok
-            res.register_advancement()
-            self._advance()
+            file_end = self._advance(res)
         else:
             return res.failure(InvalidSyntaxError(start_pos, start_pos.copy().advance(),
                 f'Reached the end of the file but there was no FILE_END Token. The file must have Invalid Syntax or the compiler is having issues.\n\nALL TOKENS: {self._tokens}\n\nLAST TOKEN SEEN: {self._current_tok}'))
@@ -815,11 +807,7 @@ class Parser:
         res = ParseResult()
         paragraphs = []
 
-        paragraph_break = None
-        if self._current_tok.type == TT.PARAGRAPH_BREAK:
-            paragraph_break = self._current_tok
-            res.register_advancement()
-            self._advance()
+        paragraph_break = self._paragraph_break(res)
 
         while True:
             # pargraph will be None if the try failed, otherwise it will be the
@@ -836,8 +824,6 @@ class Parser:
             else:
                 paragraphs.append(paragraph)
 
-        #print(paragraphs)
-
         return res.success(DocumentNode(paragraph_break, paragraphs))
 
     def _paragraph(self):
@@ -845,7 +831,9 @@ class Parser:
 
         start_pos = self._current_tok.start_pos.copy()
 
+        # Check for Writing
         writing = res.register_try(self._writing())
+
         if writing is None:
             self._reverse(res.to_reverse_count)
             return res.failure(
@@ -853,12 +841,8 @@ class Parser:
                             f'A Paragraph must have writing in it. This is not a Paragraph.')
                     )
 
-        if self._current_tok.type == TT.PARAGRAPH_BREAK:
-            paragraph_break = self._current_tok
-            res.register_advancement()
-            self._advance()
-        else:
-            paragraph_break = None
+        # Check for Paragraph Break
+        paragraph_break = self._paragraph_break(res)
 
         # writing should be a WritingNode and paragraph_break is a Token of
         #   type PARAGRAPH_BREAK
@@ -905,8 +889,7 @@ class Parser:
                     'Expected a Token of Type PASS1EXEC, PASS1EVAL, PASS2EXEC, or PASS1EVAL but did not get one.')
                 )
 
-        res.register_advancement()
-        self._advance()
+        self._advance(res)
 
         # python should be a single python Token of type PASS1EXEC or PASS2EXEC
         #   or PASS1EVAL or PASS2EVAL
@@ -937,8 +920,7 @@ class Parser:
             except KeyError:
                 break
 
-            res.register_advancement()
-            self._advance()
+            self._advance(res)
 
         if len(plain_text) == 0:
             return res.failure(InvalidSyntaxError(start_pos.copy(), start_pos.advance().copy(),
@@ -949,6 +931,24 @@ class Parser:
         # plain_text is a list of OCBRACE, CCBRACE, EQUAL_SIGN, and WORD Tokens
         #   in any order.
         return res.success(PlainTextNode(plain_text))
+
+    # -------------------------------------------------------------------------
+    # Non-Rule Lesser Help Methods
+
+    def _paragraph_break(self, parse_result):
+        """
+        A helper method that, unlike the other methods, just exists because
+            there are multiple rules with PARAGRAPH_BREAK? in them. This
+            method does that, returning None if the current token is not
+            a PARAGRAPH_BREAK and the PARAGRAPH_BREAK Token if there is one.
+            If a PARAGRAPH_BREAK token is found, the method also advances past
+            past it.
+        """
+        par_break = None
+        if self._current_tok.type == TT.PARAGRAPH_BREAK:
+            par_break = self._advance(parse_result)
+
+        return par_break
 
 # -----------------------------------------------------------------------------
 # Interpreter and Related Classes
