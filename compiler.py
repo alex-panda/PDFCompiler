@@ -1052,6 +1052,16 @@ class RunTimeResult:
           self.loop_should_break
         )
 
+class InterpreterFlags:
+    """
+    Flags for the Interpreter so that it can know what to do when an AST is
+        passed to it.
+    """
+    def __init__(self, pass_num=1, placer=None, file=None):
+        self.pass_num = pass_num # what pass this is in the compile
+        self.placer = placer # will be None if no text is supposed to be placed on a PDF
+
+
 class Interpreter:
     """
     The interpreter visits each node in the Abstract Syntax Tree generated

@@ -1,0 +1,174 @@
+This is a file all about commands.
+
+What are commands?
+
+They allow you to mark up your text---to "command" it to be a certain way or
+have something happen to it.
+
+For example:
+
+\\b{} will \b{bold any text you put inbetween its two curly brackets "{}".}
+\\i{} will \i{italicise any text you put inbetween its two curly brackets.}
+\\u{} will \u{underline any text you put inbetween its two curly brackets.}
+
+This is the pattern of all commands. You do write a backslash "\\", then the
+name of the cammand you want to do, and then put the text you want to do it to
+in between the command's curly-brackets "{}".
+
+Some commands need more than one thing between curly brackets in order to work.
+
+For example:
+
+\\font{Times New Roman}{text}
+
+Changes the text in the second set of curly brackets to be in Times New Roman font.
+
+If you are looking at the plaintext version of this file, then you will notice
+that I've been putting two backslashes "\\" every time I need to type one.
+That is because one backslash symbolizes that there must be a command after it,
+but by putting two I am saying "no, there is no command here, I just want a single
+backslash to be displayed here in the PDF version of this file."
+
+By the way, because it will be easier to talk about things later in this file
+if I define the word "arguments" first, I'll do so now. An "argument" is a
+standard term for saying "what you need to put in curly brackets". So if I
+say a command requires one "argument", that means it needs one thing in curly
+brackets in order to work. If I say it requires 3 arguments, that means that
+you need to specify 3 things in curly brackets (3 sets of "{some argument}")
+in order for the command to work.
+
+When I say "keyword arguments", or "optional argument", I am talking the
+optional things you can give or "pass" a command (put in curly brackets). I
+give good examples of these in the next section.
+
+Some commands have optional arguments. For example:
+
+    \\u{text}{underline_type=single}
+
+    You do not need to give an "underline_type" because it will default to
+    "single" (that's what the "=single" means) and only draw one line under the
+    text, but you could, instead, specify "double" for underline_type and it will
+    put two lines under the text to underline it.
+
+    If you are specifying an optional argument, then you can just write the
+    specification, you do not have to write "keyword=your argument". You can
+    just write "your argument". To show that, here's the same command as
+    above but without the keyword specified:
+
+    \\u{text}{single}
+
+    It will work exactly the same as above, I just write "keyword=" when I want
+    to show that it is on optional argument. I do that a lot below when listing
+    the general commands down below.
+
+    The main reason you may want to put "keyword=" is if there is an optional
+    argument that comes after a different optional argument. For example,
+    the \\u command has three optional arguments. The definition of it looks
+    as follows:
+
+    \\u{text}{underline_type=single}{color=black}{span_spaces=true}
+
+    If you just want to set span_spaces to be false (look at the definition
+    of the function (which is shown below) if you want to know what each
+    optional argument actually does), you can just write
+
+    \\u{text}{span_spaces=false}
+
+    and the other two optional arguments will still be specified as their
+    defaults.
+
+
+Here is a full list of the basic commands available in every file by default:
+
+    \\s{text} will strikethrough text.
+
+    \\b{text} will bold text.
+
+    \\i{text} will italicize text.
+
+    \\u{text}{underline_type=single}{color=black}{span_spaces=true} will
+        underline text with the given underline type with the given color.
+        Types available are single, double, wide, wave, dash, dot, dot_dash,
+        and dot_dash_dash. If span_spaces is True, then the underline will
+        continue between spaces. If false, then the underline will only be
+        under the words themselves.
+
+    \\font{font name}{font size}{text} will change the text to the given font
+        name and font size. If either are left blank, then the value that is
+        missing will be kept the same.
+
+    \\color{color}{text} will color the text the given color. color can be either
+        a named color (look at the bottom of this file) or you can specify one
+        by doing a comma seperated RGB value "100, 200, 256", RGBA value
+        "100, 200, 200, 256", or a hex color "#FFFFF" or "#00000000".
+
+    \\highlight{color}{text} will highlight the text the given color. The colors
+        available are the same as the \\color command.
+
+    \\align{alignment}{text} will align the text the given way. The available
+        alignments are "left", "right", "center", and "justify".
+
+    \\newcommand{command_name}{comma, seperated, list, of, arguments, coma=seperated,
+        list=of, some=key, word=arguments}
+        {code/text to run at start of command}{code/text to run at end of command}
+        will allow you to define a new command of the given name, with the given
+        arguments and key-word arguments, which will run the given code when
+        the command is run. If you do not understand what any of that means,
+        look at the "defining_commands.pdfo" file of the tutorial. It has a
+        far longer and more digestible explenation. This command will throw
+        an error if the command_name is already in use.
+
+    \\renewcommand is the same as newcommand (and with the same arguments and
+        keyword arguments) but throws an error if the command_name has NOT
+        already been defined\is not already in use.
+
+For the following commands, the file path should be written
+    using only forward slashes, regardless of what operating system you are
+    using (i.e. write "path/to/file" not "path\to\file", even if you are
+    on windows). The file path can be relative to the file being run or
+    can be an absolute path.
+
+    \\insert{file path} will run the file specified by file path an the point
+        in the file when this command is run. It will run the file completely,
+        inserting its text into the PDF at that point in the PDF.
+
+    \\import_from{file path}{command_name, another_command_name,
+        command_name as new_name_for_command}
+        will import commands, denoted by a comma seperated list, from the
+        file specified by file path. You can import a command under another
+        name if you write an entry as command_name "as" new_name_for_command.
+        By writing just "*" you can import all commands from the file. This
+        runs the file, but does NOT put any of the text from it in the PDF.
+
+Named Units:
+    inch, cm, mm, pica
+
+Named Page Sizes:
+        A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10,
+        B0, B1, B2, B3, B4, B5, B6, B7, B8, B9, B10,
+        C0, C1, C2, C3, C4, C5, C6, C7, C8, C9, C10,
+        LETTER, LEGAL, ELEVENSEVENTEEN, JUNIOR_LEGAL, HALF_LETTER,
+        GOV_LETTER, GOV_LEGAL, TABLOID, LEDGER
+
+Named Colors:
+    transparent, aliceblue, antiquewhite, aqua, aquamarine, azure, beige, bisque,
+    black, blanchedalmond, blue, blueviolet, brown, burlywood, cadetblue, chartreuse,
+    chocolate, coral, cornflowerblue, cornsilk, crimson, cyan, darkblue, darkcyan,
+    darkgoldenrod, darkgray, darkgrey, darkgreen, darkkhaki, darkmagenta, darkolivegreen,
+    darkorange, darkorchid, darkred, darksalmon, darkseagreen, darkslateblue, darkslategray,
+    darkslategrey, darkturquoise, darkviolet, deeppink, deepskyblue, dimgray, dimgrey,
+    dodgerblue, firebrick, floralwhite, forestgreen, fuchsia, gainsboro, ghostwhite,
+    gold, goldenrod, gray, grey, green, greenyellow, honeydew, hotpink, indianred,
+    indigo, ivory, khaki, lavender, lavenderblush, lawngreen, lemonchiffon, lightblue,
+    lightcoral, lightcyan, lightgoldenrodyellow, lightgreen, lightgrey, lightpink,
+    lightsalmon, lightseagreen, lightskyblue, lightslategray, lightslategrey, lightsteelblue,
+    lightyellow, lime, limegreen, linen, magenta, maroon, mediumaquamarine, mediumblue,
+    mediumorchid, mediumpurple, mediumseagreen, mediumslateblue, mediumspringgreen,
+    mediumturquoise, mediumvioletred, midnightblue, mintcream, mistyrose, moccasin,
+    navajowhite, navy, oldlace, olive, olivedrab, orange, orangered, orchid, palegoldenrod,
+    palegreen, paleturquoise, palevioletred, papayawhip, peachpuff, peru, pink, plum,
+    powderblue, purple, red, rosybrown, royalblue, saddlebrown, salmon, sandybrown, seagreen,
+    seashell, sienna, silver, skyblue, slateblue, slategray, slategrey, snow, springgreen,
+    steelblue, tan, teal, thistle, tomato, turquoise, violet, wheat, white, whitesmoke,
+    yellow, yellowgreen, fidblue, fidred, fidlightblue
+
