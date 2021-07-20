@@ -30,11 +30,11 @@ python       : PASS1EXEC|PASS2EXEC|PASS1EVAL|PASS2EVAL
 
 plain_text   : (OCBRACE|CCBRACE|EQUAL_SIGN|WORD)+
 
-cmnd_call    : CMND_NAME (cmnd_exp|cmnd_key_exp)*
+cmnd_call    : CMND_NAME (cmnd_key_exp|cmnd_exp)*
 
-cmnd_exp     : LCBRACE paragraph* RCBRACE
+cmnd_key_arg : LCBRACE WORD EQUAL_SIGN paragraph* RCBRACE
 
-cmnd_key_exp : LCBRACE WORD EQUAL_SIGN paragraph* RCBRACE
+cmnd_arg     : LCBRACE paragraph* RCBRACE
 
 -------------------------------------------------------------------------------
 Legend:
@@ -44,8 +44,8 @@ Legend:
     | means "or"
     () groups things so that "?" or "*" affects the entire group
 
-Note: In "writing", the rules must be parsed in that order because they go
-    from narrowest to broadest (as in, python statements accept very specific
+Note: In "writing", the rules must be parsed in the order specified because they
+    go from narrowest to broadest (as in, python statements accept very specific
     tokens, then cmnd_call accepts more types of tokens, and then plain_text
     accepts the most types of tokens).
 

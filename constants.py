@@ -21,6 +21,9 @@ class VAR_TYPES(Enum):
 # The characters that a valid control sequence can have
 CMND_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_"
 
+# The characters that a valid variable may have
+VAR_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_"
+
 class TT(Enum):
     """Token Types"""
     OPAREN = 'OPENNING PARENTHESIS'  # r'('

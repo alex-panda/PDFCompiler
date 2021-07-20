@@ -10,7 +10,7 @@ from decimal import Decimal
 from reportlab.lib.units import inch, cm, mm, pica, toLength
 from reportlab.lib import units, colors, pagesizes as pagesizes
 
-from constants import CMND_CHARS, END_LINE_CHARS, ALIGN, TT, TT_M, WHITE_SPACE_CHARS, NON_END_LINE_CHARS
+from constants import CMND_CHARS, VAR_CHARS, END_LINE_CHARS, ALIGN, TT, TT_M, WHITE_SPACE_CHARS, NON_END_LINE_CHARS
 from tools import assure_decimal, is_escaped, is_escaping, exec_python, eval_python, string_with_arrows
 from placer import Placer
 
@@ -239,15 +239,19 @@ class Tokenizer:
 
         return tokens
 
-    def tokenize(self):
+    def tokenize(self, file=True):
         """
         Turn the raw text into tokens that the compiler can use.
+
+        If file is true, the tokenizer assumes that the text is from a file and
+            bookends the tokens with TT.FILE_START and TT.FILE_END
         """
         self._tokens = []
         self._plain_text = ''
         what_can_be_escaped = {'{', '}', '=', '\\'}
 
-        self._tokens.append(Token(TT.FILE_START, '<FILE START>', self._pos.copy()))
+        if file:
+            self._tokens.append(Token(TT.FILE_START, '<FILE START>', self._pos.copy()))
 
         # By default, all text is plain text until something says otherwise
         while self._current_char is not None:
@@ -262,16 +266,17 @@ class Tokenizer:
                 self._plain_text_char()
             elif is_escaping(self._pos.idx, self._text, what_can_be_escaped):
                 self._advance() # Just advance because it is just escaping something else
-            elif self._match(END_LINE_CHARS):
-                # self._match will advance past '\n' or '\r\n'
-                pos_start = self._pos.copy()
+            elif cc in END_LINE_CHARS:
                 self._try_word_token()
+                self._advance()
 
-                if self._match(END_LINE_CHARS):
+                pos_start = self._pos.copy()
 
-                    while self._match(END_LINE_CHARS):
-                        # self._match will automatically keep advancing past the '\n' and '\r\n' it finds
-                        pass # Do nothing, just eat the END_LINE_CHARS now that we know that there is a PARAGRAPH_BREAK
+                if self._current_char in END_LINE_CHARS:
+
+                    while self._current_char in END_LINE_CHARS:
+                        # Do nothing, just eat the END_LINE_CHARS now that we know that there is a PARAGRAPH_BREAK
+                        self._advance()
 
                     t = Token(TT.PARAGRAPH_BREAK, None, pos_start, self._pos.copy())
             elif cc in NON_END_LINE_CHARS:
@@ -304,7 +309,8 @@ class Tokenizer:
 
         self._try_word_token()
 
-        self._tokens.append(Token(TT.FILE_END, '<FILE END>', self._pos.copy()))
+        if file:
+            self._tokens.append(Token(TT.FILE_END, '<FILE END>', self._pos.copy()))
 
         return self._tokens
 
@@ -618,10 +624,6 @@ class WritingNode(LeafNode):
     def __repr__(self):
         return f'{self.__class__.__name__}({self.writing})'
 
-class CommandCallNode(LeafNode):
-    __slots__ = LeafNode.__slots__[:]
-    __slots__.extend(['writing'])
-
 class PythonNode(LeafNode):
     __slots__ = LeafNode.__slots__[:]
     __slots__.extend(['python', 'python_string'])
@@ -635,6 +637,31 @@ class PythonNode(LeafNode):
 
     def __repr__(self):
         return f'{self.__class__.__name__}({self.python})'
+
+class CommandCallNode(LeafNode):
+    __slots__ = ['start_pos', 'end_pos', 'cmnd_name', 'cmnd_args', 'cmnd_key_args']
+    def __init__(self, cmnd_name, cmnd_key_args, cmnd_args):
+        self.start_pos = cmnd_name.start_pos
+        self.end_pos = cmnd_name.end_pos
+
+        self.cmnd_name = cmnd_name # CMND_NAME Token
+        self.cmnd_args = cmnd_args # list of argument
+        self.cmnd_key_args = cmnd_key_args # dict of keyword:argument pairs
+
+    def __repr__(self):
+        string = f'{self.__class__.__name__}(\\{self.cmnd_name}'
+
+        # add args
+        for arg in self.cmnd_args:
+            string += '{' + f'{arg}' + '}'
+
+        # add kwargs
+        for key, kwarg in self.cmnd_key_args.items():
+            string += '{' + f'{key}={kwarg}' + '}'
+
+        # end string
+        string += ')'
+        return string
 
 class PlainTextNode(LeafNode):
     __slots__ = LeafNode.__slots__[:]
