@@ -1,7 +1,7 @@
 from reportlab.lib.units import inch, cm, mm, pica, toLength
 from decimal import Decimal
 
-from constants import ALIGN, TT
+from constants import ALIGNMENT, TT
 from tools import assure_decimal
 from toolbox import ToolBox
 
@@ -66,6 +66,7 @@ class Placer:
     def __init__(self):
         self._default_page = PDFPageTemplate()
         self._broke_paragraph = True
+        self._suppress_next_space = False
 
     def default_page(self):
         return self._default_page
@@ -94,7 +95,6 @@ class Placer:
         If a string is given, it is tokenized with all references to commands
             and python code ignored and simply not written.
         """
-
         for i, token in enumerate(text):
 
             if token.type == TT.PARAGRAPH_BREAK:
@@ -102,12 +102,23 @@ class Placer:
                 continue
 
             if self._broke_paragraph:
-                print('\t', end='')
+                print(f'\t{token.value}', end='')
                 self._broke_paragraph = False
+                self._suppress_next_space = False
 
-                print(f'{token.value}', end='')
             else:
-                print(f' {token.value}', end='')
+                if token.space_before and not self._suppress_next_space:
+                    print(f' {token.value}', end='')
+                else:
+                    print(f'{token.value}', end='')
+                    self._suppress_next_space = False
+
+    def add_space(self):
+        """
+        Adds a space to the output.
+        """
+        self._suppress_next_space = True
+        print(' ', end='')
 
     def new_paragraph(self):
         """
@@ -171,11 +182,11 @@ class Template:
         return self._alignment
 
     def set_alignment(self, new_alignment):
-        if not isinstance(new_alignment, ALIGN):
+        if not isinstance(new_alignment, ALIGNMENT):
             if isinstance(new_alignment, str):
                 new_alignment = toolbox.alignments_by_name(new_alignment)
             else:
-                raise TypeError(f'You tried to set the alignment of the text to {new_alignment}, which is not in the ALIGN Enum required.')
+                raise TypeError(f'You tried to set the alignment of the text to {new_alignment}, which is not in the ALIGNMENT Enum required.')
         self._align = new_alignment
 
     def copy(self, recursive=False):
@@ -261,7 +272,7 @@ class PDFPageTemplate(Template):
     def __init__(self):
         super().__init__()
         self.margins().set_all(1*inch, 1*inch, 1*inch, 1*inch)
-        self._alignment = ALIGN.LEFT
+        self._alignment = ALIGNMENT.LEFT
 
         self._default_paragraph = PDFParagraphTemplate()
 

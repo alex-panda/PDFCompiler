@@ -5,6 +5,36 @@ from collections import namedtuple as named_tuple
 
 class Enum(str, aenum):
     """A super-class used to give methods to very enum in the application."""
+
+    @classmethod
+    def validate(cls, obj, raise_exception=True):
+        """
+        Validates an object and returns the matching value if it matches a value
+            of the Enum and False otherwise.
+
+        If raise_exception, then an exception will be raised if a valid value
+            is not given. If it is False, then this method will just return False.
+        """
+        from marked_up_text import MarkedUpText
+        from tools import trimmed
+        val = obj
+        if isinstance(obj, (str, cls)) and ((val := trimmed(obj.lower()) in cls.values())):
+            return val
+        elif isinstance(obj, MarkedUpText) and ((val := trimmed(obj._text.lower()) in cls.values())):
+            return val
+
+        if raise_exception:
+            valid_values = ''
+
+            for i, value in enumerate(cls.values()):
+                if i > 0:
+                    valid_values += ', '
+                valid_values += value.lower()
+
+            raise Exception(f'Value {val} is not a valid {cls.__class__.__name__} value. The valid values are {valid_values}.')
+        else:
+            return False
+
     @classmethod
     def values(cls):
         """Returns a list of all the values of the Enum."""
@@ -21,27 +51,26 @@ class VAR_TYPES(Enum):
 # The characters that a valid control sequence can have
 CMND_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_"
 
-# The characters that a valid variable may have
-VAR_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_"
-
 class TT(Enum):
     """Token Types"""
-    OPAREN = 'OPENNING PARENTHESIS'  # r'('
-    CPAREN = 'CLOSING PARENTHESIS'   # r')'
-    OBRACE = 'OPENING BRACE'         # r'['
-    CBRACE = 'CLOSING BRACE'         # r']'
     BACKSLASH = 'BACKSLASH'          # r'\'
 
     # --------------------------------------
-    # Ones Actually in Use by Tokenizer or Other
+    # Ones Actually in Use by Tokenizer or Parser
+    COMMA = 'COMMA'                  # r','
     OCBRACE = 'OPENING CURLY BRACE'  # r'{'
     CCBRACE = 'CLOSING CURLY BRACE'  # r'}'
     EQUAL_SIGN = 'EQUALS SIGN'       # r'='
 
-    PASS1EXEC = 'PYTHON FIRST PASS EXEC'
-    PASS1EVAL = 'PYTHON FIRST PASS EVAL'
-    PASS2EXEC = 'PYTHON SECOND PASS EXEC'
-    PASS2EVAL = 'PYTHON SECOND PASS EVAL'
+    OPAREN = 'OPENNING PARENTHESIS'  # r'('
+    CPAREN = 'CLOSING PARENTHESIS'   # r')'
+    OBRACE = 'OPENING BRACE'         # r'['
+    CBRACE = 'CLOSING BRACE'         # r']'
+
+    EXEC_PYTH1 = 'PYTHON EXEC FIRST PASS'
+    EVAL_PYTH1 = 'PYTHON EVAL FIRST PASS'
+    EXEC_PYTH2 = 'PYTHON EXEC SECOND PASS'
+    EVAL_PYTH2 = 'PYTHON EVAL SECOND PASS'
 
     PARAGRAPH_BREAK = 'PARAGRAPH BREAK'
 
@@ -54,7 +83,7 @@ class TT(Enum):
 
     NONE_LEFT = 'NONE_LEFT' # For Parser when there are no more Tokens to parse
 
-END_LINE_CHARS = ('\r', '\n', '\f') # White space that would start a new line/paragraph
+END_LINE_CHARS = ('\r\n', '\r', '\n', '\f') # White space that would start a new line/paragraph
 NON_END_LINE_CHARS = (' ', '\t', '\v') # White space that would not start a new line/paragraph
 WHITE_SPACE_CHARS = (' ', '\t', '\n', '\r', '\f', '\v') # all white space
 
@@ -76,32 +105,35 @@ class TT_M:
     """
     What the more complex tokens should each match.
     """
-    # PYTHON CODE IDENTIFIERS (NOTE: The start of each one must start with a backslash because of where the matching takes place in the tokenizer)
+    # NOTE: the matches must start with \ because of where they are matched in
+    #   the Tokenizer
+
+    # PYTHON CODE IDENTIFIERS
     #   FIRST PASS PYTHON
     #       EXEC PYTHON
-    ONE_LINE_PYTH_1PASS_EXEC_START   = ['\\1>']
-    ONE_LINE_PYTH_1PASS_EXEC_END     = [*nl('<\\', '<1\\'), *END_LINE_CHARS]
-    MULTI_LINE_PYTH_1PASS_EXEC_START = ['\\1->']
-    MULTI_LINE_PYTH_1PASS_EXEC_END   = [*nl('<-\\', '<-1\\')]
+    ONE_LINE_PYTH_1PASS_EXEC_START =    ['\\1>']
+    ONE_LINE_PYTH_1PASS_EXEC_END =      [*nl('<\\', '<1\\'), *END_LINE_CHARS]
+    MULTI_LINE_PYTH_1PASS_EXEC_START =  ['\\1->']
+    MULTI_LINE_PYTH_1PASS_EXEC_END =    [*nl('<-\\', '<-1\\')]
 
     #       EVAL PYTHON
-    ONE_LINE_PYTH_1PASS_EVAL_START   = ['\\?1>']
-    ONE_LINE_PYTH_1PASS_EVAL_END     = [*nl('<\\', '<?\\', '<1?\\'), *END_LINE_CHARS]
-    MULTI_LINE_PYTH_1PASS_EVAL_START = ['\\?1->']
-    MULTI_LINE_PYTH_1PASS_EVAL_END   = [*nl('<-\\', '<-1?\\')]
+    ONE_LINE_PYTH_1PASS_EVAL_START =    ['\\1?>']
+    ONE_LINE_PYTH_1PASS_EVAL_END =      [*nl('<\\', '<?\\', '<?1\\'), *END_LINE_CHARS]
+    MULTI_LINE_PYTH_1PASS_EVAL_START =  ['\\1?->']
+    MULTI_LINE_PYTH_1PASS_EVAL_END =    [*nl('<-\\', '<-?1\\')]
 
     #   SECOND PASS PYTHON
     #       EXEC PYTHON
-    ONE_LINE_PYTH_2PASS_EXEC_START   = ['\\>', '\\2>']
-    ONE_LINE_PYTH_2PASS_EXEC_END     = [*nl('<\\', '<2\\'), *END_LINE_CHARS]
-    MULTI_LINE_PYTH_2PASS_EXEC_START = ['\\->', '\\2->']
-    MULTI_LINE_PYTH_2PASS_EXEC_END   = [*nl('<-\\', '<-2\\')]
+    ONE_LINE_PYTH_2PASS_EXEC_START =    ['\\>', '\\2>']
+    ONE_LINE_PYTH_2PASS_EXEC_END =      [*nl('<\\', '<2\\'), *END_LINE_CHARS]
+    MULTI_LINE_PYTH_2PASS_EXEC_START =  ['\\->', '\\2->']
+    MULTI_LINE_PYTH_2PASS_EXEC_END =    [*nl('<-2\\')]
 
     #       EVAL PYTHON
-    ONE_LINE_PYTH_2PASS_EVAL_START   = ['\\?>', '\\?2>']
-    ONE_LINE_PYTH_2PASS_EVAL_END     = [*nl('<\\', '<?\\', '<2?\\'), *END_LINE_CHARS]
-    MULTI_LINE_PYTH_2PASS_EVAL_START = ['\\?->', '\\?2->']
-    MULTI_LINE_PYTH_2PASS_EVAL_END   = [*nl('<-\\', '<-?\\')]
+    ONE_LINE_PYTH_2PASS_EVAL_START =    ['\\?>', '\\2?>']
+    ONE_LINE_PYTH_2PASS_EVAL_END =      [*nl('<\\', '<?\\', '<?2\\'), *END_LINE_CHARS]
+    MULTI_LINE_PYTH_2PASS_EVAL_START =  ['\\?->']
+    MULTI_LINE_PYTH_2PASS_EVAL_END =    [*nl('<-?\\')]
 
     # COMMENT IDENTIFIERS (NOTE: The start of each one must start with a backslash because of where the matching takes place in the tokenizer)
     SINGLE_LINE_COMMENT_START        = ['\\%', '\\#']
@@ -111,13 +143,32 @@ class TT_M:
 
 del nl
 
+class COMPILED_REGEX:
+    WHITE_SPACE = re.compile('(\s)+')
+    WHITE_SPACE_CHAR = re.compile('(\s)')
+
 # -----------------------------------------------------------------------------
 # API Constants (Constants that people compiling their pdf might actually see)
 
-class ALIGN(Enum):
-    # NOTE: The values must be the same as the how you get them. I.E. ALIGN.LEFT must have value 'left', 'LeFt', 'LEFT', etc.
+# NOTE: The values of these must be both lower case and the same as what you
+#   want the user to type in to get them.
+
+class ALIGNMENT(Enum):
     LEFT = 'left'
     CENTER = 'center'
     RIGHT = 'right'
     JUSTIFIED = 'justified'
+
+class SCRIPT(Enum):
+    NORMAL = 'normal'
+    SUPER = 'super'
+    SUB = 'sub'
+
+class STRIKE_THROUGH(Enum):
+    SINGLE = 'single'
+    DOUBLE = 'double'
+
+class UNDERLINE(Enum):
+    SINGLE = 'single'
+    DOUBLE = 'double'
 

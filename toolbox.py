@@ -7,8 +7,8 @@ from decimal import Decimal
 from reportlab.lib.units import inch, cm, mm, pica, toLength
 from reportlab.lib import units, colors, pagesizes as pagesizes
 
-from tools import assure_decimal, is_escaped, is_escaping, exec_python, eval_python, string_with_arrows
-from constants import ALIGN
+from tools import assure_decimal, trimmed
+from constants import ALIGNMENT, SCRIPT, STRIKE_THROUGH, UNDERLINE
 
 PAGE_SIZES = ( \
         'A0', 'A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8', 'A9', 'A10',
@@ -58,42 +58,74 @@ class ToolBox:
         self._units = named_tuple('Units', UNITS)(*[Decimal(getattr(units, unit)) for unit in UNITS])
         self._units_dict = {unit:getattr(self._units, unit) for unit in UNITS}
 
-        self._colors = named_tuple('Units', COLORS)(*[getattr(colors, color) for color in COLORS])
+        self._colors = named_tuple('Colors', COLORS)(*[getattr(colors, color) for color in COLORS])
         self._colors_dict = {color:getattr(colors, color) for color in COLORS}
 
-        self._alignments = named_tuple('Units', [val.lower() for val in ALIGN.values()])(*[getattr(ALIGN, alignment.upper()) for alignment in ALIGN.values()])
-        self._alignments_dict = {alignment.lower():getattr(self._alignments, alignment.lower()) for alignment in ALIGN.values()}
+    # ---------------------------------
+    # Constants made available for coders coding in python
 
     def colors(self):
         return self._colors
 
-    def color_by_name(self, color_name_str):
-        return self._colors_dict[color_name_str.lower()]
-
     def page_sizes(self):
         return self._page_sizes
-
-    def page_size_by_name(self, page_size_str):
-        return self._page_sizes_dict[page_size_str.upper()]
 
     def units(self):
         return self._units
 
-    def units_by_name(self, unit_name_str):
-        return self._units_dict[unit_name_str.lower()]
+    def alignment(self):
+        return ALIGNMENT
 
-    def alignments(self):
-        self._alignments
+    def script(self):
+        return SCRIPT
 
-    def alignments_by_name(self, alignment_name):
-        return self._alignments_dict[alignment_name.lower()]
+    def strike_through(self):
+        return STRIKE_THROUGH
 
-    def str_to_length(self, length_as_str):
+    def underline(self):
+        return UNDERLINE
+
+    # ---------------------------------
+    # Methods that allow a standard way for users to get constants from commands
+
+    def color_for_str(self, color_name_str):
+        trimmed = trimmed(color_name_str)
+        lowered = trimmed.lower()
+
+        if lowered in self._colors_dict:
+            return self._colors_dict[lowered]
+
+        raise Exception(f'{color_name_str} is not a valid name for a color.')
+
+    def page_size_for_str(self, page_size_str):
+        return self._page_sizes_dict[trimmed(page_size_str).upper()]
+        raise Exception(f'{page_size_str} is not a valid page size.')
+
+    def unit_for_str(self, unit_name_str):
+        return self._units_dict[trimmed(unit_name_str).lower()]
+        raise Exception(f'{unit_name_str} is not a valid unit.')
+
+    def alignment_for_str(self, alignment_name):
+        return ALIGN.validate(alignment_name)
+
+    def script_for_str(self, script_name):
+        return SCRIPT.validate(script_name)
+
+    def strike_through_for_str(self, script_name):
+        return STRIKE_THROUGH.validate(script_name)
+
+    def underline_for_str(self, script_name):
+        return UNDERLINE.validate(script_name)
+
+    def length_for_str(self, length_as_str):
         """
         Takes a length as a string, such as '4pica' or '4mm' and converts it
             into a Decimal of the specified size.
         """
         return assure_decimal(toLength(length_as_str))
+
+    # ---------------------------------
+    # Other Helpful Methods
 
     def assure_landscape(self, page_size):
         """

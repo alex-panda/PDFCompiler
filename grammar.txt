@@ -1,40 +1,35 @@
 -------------------------------------------------------------------------------
-The Grammar right now:
+Grammar Rules:
 
-RULE_NAME    : RULE_DESCRIPTION
+file           : FILE_START document FILE_END
 
-file         : FILE_START document FILE_END
+document       : PB? paragraph* PB?
 
-document     : PARAGRAPH_BREAK? paragraphs* PARAGRAPH_BREAK?
+paragraph      : PB? writing
 
-paragraph    : PARAGRAPH_BREAK? writing
+writing        : python|cmnd_def|cmnd_call|text_group|plain_text
 
-writing      : python|plain_text
+python         : PYTHON_EVAL|PYTHON_EXEC
+---------------
+cmnd_def       : IDENTIFIER PB? EQUAL_SIGN PB? (OPAREN (cmnd_param (PB? COMMA cmnd_param)*)? PB? CPAREN)? text_group
 
-python       : PASS1EVAL|PASS1EXEC|PASS2EVAL|PASS2EXEC
+cmnd_param     : PB? cmnd_param|cmnd_key_param
 
-plain_text   : (OCBRACE|CCBRACE|EQUAL_SIGN|WORD)+
+cmnd_key_param : IDENTIFIER PB? EQUAL_SIGN PB? text_group
 
--------------------------------------------------------------------------------
-The Grammar in the Future:
+cmnd_tex_param : IDENTIFIER
+---------------
+cmnd_call      : IDENTIFIER (cmnd_arg)*
 
-file         : FILE_START document FILE_END
+cmnd_arg       : PB? cmnd_key_arg|cmnd_tex_arg
 
-document     : PARAGRAPH_BREAK? paragraphs* PARAGRAPH_BREAK?
+cmnd_key_arg   : OCBRACE IDENTIFIER PB? EQUAL_SIGN PB? text_group CCBRACE
 
-paragraph    : PARAGRAPH_BREAK? writing
+cmnd_tex_arg   : text_group
+---------------
+text_group     : OCBRACE document CCBRACE
 
-writing      : python|cmnd_call|plain_text
-
-python       : PASS1EXEC|PASS2EXEC|PASS1EVAL|PASS2EVAL
-
-plain_text   : (OCBRACE|CCBRACE|EQUAL_SIGN|WORD)+
-
-cmnd_call    : CMND_NAME (cmnd_key_exp|cmnd_exp)*
-
-cmnd_key_arg : LCBRACE WORD EQUAL_SIGN paragraph* RCBRACE
-
-cmnd_arg     : LCBRACE paragraph* RCBRACE
+plain_text     : (EQUAL_SIGN|COMMA|OPAREN|CPAREN|OBRACE|CBRACE|WORD)+
 
 -------------------------------------------------------------------------------
 Legend:
@@ -43,6 +38,7 @@ Legend:
     + means "one or more of" whatever's before it
     | means "or"
     () groups things so that "?" or "*" affects the entire group
+    PB = PARAGRAPH_BREAK
 
 Note: In "writing", the rules must be parsed in the order specified because they
     go from narrowest to broadest (as in, python statements accept very specific

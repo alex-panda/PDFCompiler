@@ -1,4 +1,5 @@
 from decimal import Decimal
+from constants import WHITE_SPACE_CHARS
 
 def assure_decimal(val):
     if isinstance(val, (float, int)):
@@ -31,18 +32,45 @@ def is_escaped(pos, text, chars_that_can_be_escaped):
     return ((i % 2) == 1)
 
 
-def is_escaping(pos, text, chars_that_can_be_escaped):
+def is_escaping(pos:int, text:str, chars_that_can_be_escaped:list):
 
     # If it is escaping something else then it too is escaped
     if text[pos] == '\\' and pos + 1 < len(text) and text[pos + 1] in chars_that_can_be_escaped:
         return True
     return False
 
-def trim(string):
+def trimmed(string):
     """
-    Returns a version of the given string with the white sapace on either side
+    Returns a version of the given string with the white space on either side
         of it trimmed off.
     """
+    if string == '':
+        return string
+
+    first_index = None
+    last_index = None
+
+    for i, ch in enumerate(string):
+
+        if ch in WHITE_SPACE_CHARS:
+            continue
+
+        first_index = i
+        break
+
+    for i, ch in enumerate(reversed(string)):
+
+        if ch in WHITE_SPACE_CHARS:
+            continue
+
+        last_index = len(string) - i
+        break
+
+    if first_index is None or last_index is None:
+        return ''
+    else:
+        return string[first_index:last_index]
+
 
 def exec_python(code, exec_globals:dict):
     """

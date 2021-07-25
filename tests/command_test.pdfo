@@ -1,0 +1,29 @@
+
+This is a Test.
+
+This is also a Test.
+
+
+
+\hi{Alex}
+
+\hi = (\first, \second={SecondName}) {
+    Hello \first \second
+}
+
+
+\hi{Alex}{Peseckis}
+
+
+\hi{Alex}{\second={Peseckis}}
+
+
+\bold = (\content) {
+    BOLD-> \content <-BOLD
+}
+
+This is also a Test down here.
+
+\>print('Hello')
+
+\bold{this should be bold }
