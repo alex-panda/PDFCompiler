@@ -165,10 +165,18 @@ class SCRIPT(Enum):
     SUB = 'sub'
 
 class STRIKE_THROUGH(Enum):
+    NONE = 'None'
     SINGLE = 'single'
     DOUBLE = 'double'
 
 class UNDERLINE(Enum):
+    NONE = 'None'
     SINGLE = 'single'
     DOUBLE = 'double'
+    WAVE = 'wave'
+    THICK = 'thick'
+    DOTTED = 'dotted'
+    DASHED = 'dashed'
+    DOT_DASHED = 'dot dashed'
+    DOT_DOT_DASHED = 'dot dot dashed'
 

@@ -9,7 +9,7 @@ of a paragraph, A.K.A. a paragraph break.
 As long as there is at least one line of whitespace (technically two newline
 characters, if you know what those are) there will be one paragraph break.
 In other words, having more blank lines does not matter. They will only break
-your paragraph ones.
+your paragraph once.
 
 
 
@@ -66,4 +66,8 @@ Multi-line comment.
 \#-><-%\
 
 That is how comments work, please continue on to "commands.pdfo" to continue.
+
+
+
+
 

@@ -2,10 +2,7 @@ from decimal import Decimal
 from constants import WHITE_SPACE_CHARS
 
 def assure_decimal(val):
-    if isinstance(val, (float, int)):
-        return Decimal(val)
-    else:
-        return val
+    return Decimal(val)
 
 def str_till(pattern, start_pos, string):
     """
@@ -72,13 +69,16 @@ def trimmed(string):
         return string[first_index:last_index]
 
 
-def exec_python(code, exec_globals:dict):
+def exec_python(code, exec_globals:dict, exec_locals:dict=None):
     """
     Executes python code and returns the value stored in 'ret' if it was
         specified as a global variable.
     """
+    if exec_locals is None:
+        exec_locals = {}
+
     try:
-        exec(code, exec_globals)
+        exec(code, exec_globals, exec_locals)
     except Exception as e:
         return e
 
@@ -88,12 +88,15 @@ def exec_python(code, exec_globals:dict):
         return None
 
 
-def eval_python(code:str, eval_globals:dict):
+def eval_python(code:str, eval_globals:dict, eval_locals:dict=None):
     """
     Avaluates Python and returns a string of the output.
     """
+    if eval_locals is None:
+        eval_locals = {}
+
     try:
-        res = eval(code, eval_globals)
+        res = eval(code, eval_globals, eval_locals)
     except Exception as e:
         return e
 

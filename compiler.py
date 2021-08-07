@@ -10,9 +10,9 @@ from decimal import Decimal
 from reportlab.lib.units import inch, cm, mm, pica, toLength
 from reportlab.lib import units, colors, pagesizes as pagesizes
 
+from placer.placer import Placer
 from constants import CMND_CHARS, END_LINE_CHARS, ALIGNMENT, TT, TT_M, WHITE_SPACE_CHARS, NON_END_LINE_CHARS, COMPILED_REGEX
 from tools import assure_decimal, is_escaped, is_escaping, exec_python, eval_python, string_with_arrows, trimmed
-from placer import Placer
 from marked_up_text import MarkedUpText
 from markup import Markup, MarkupStart, MarkupEnd
 
@@ -203,9 +203,6 @@ class Tokenizer:
             self._pos.advance(self._current_char)
             self._current_char = self._text[self._pos.idx] if self._pos.idx < len(self._text) else None
 
-            if self._current_char is None:
-                break
-
     @staticmethod
     def plaintext_tokens_for_str(string):
         """
@@ -283,6 +280,10 @@ class Tokenizer:
                 if t.type == TT.PARAGRAPH_BREAK:
                     markup = Markup()
                     markup.set_paragraph_break(True)
+                    text.add_markup(markup, curr_index)
+                elif t.type in (TT.EXEC_PYTH2, TT.EVAL_PYTH2):
+                    markup = Markup()
+                    markup.add_python(t)
                     text.add_markup(markup, curr_index)
                 else:
                     if t.space_before:
@@ -1936,46 +1937,63 @@ class Interpreter:
 # Compiler Class
 
 class Compiler:
-    def __init__(self, file_path_to_start_file, output_file_path):
-        self._start_file = file_path_to_start_file
+    def __init__(self, input_file_path):
         self._commands = {}
         self._files_by_path = {}
+        self._input_file_path = input_file_path
 
-        self._placer = Placer()
-        self._init_globals()
-        self._init_commands()
-
-    def _init_globals(self):
-        self._globals = {'__name__': __name__, '__doc__': None, '__package__': None,
-                '__loader__': __loader__, '__spec__': None, '__annotations__': {},
-                '__builtins__': _copy.deepcopy(globals()['__builtins__'].__dict__)}
-
-        # Now remove any problematic builtins from the globals
-        rem_builtins = []
-        [self._globals['__builtins__'].pop(key) for key in rem_builtins]
-
-        self._global_symbol_table = SymbolTable()
-
-    def _init_commands(self):
-        gst = self._global_symbol_table
+        self._globals = self._fresh_globals()
+        self._global_symbol_table = self._fresh_global_symbol_table()
 
     # -------------------------------------------------------------------------
     # Main Methods
 
     def compile_pdf(self):
         """
-        Compiles the PDF starting at self._start_file
+        Compiles the PDF and returns the PDFDocument that can be used to draw
+            the PDF multiple times to different files.
         """
-        file = self._import_file(self._start_file)
+        tokens = self._run_file(self._input_file_path)
+        return Placer(tokens, self._globals).create_pdf()
+
+    def compile_and_draw_pdf(self, output_pdf_path):
+        """
+        Convenience function that compiles and draws the PDF
+        """
+        self.compile_pdf().draw(output_pdf_path)
+
+    # -------------------------------------------------------------------------
+    # Helper Methods
+
+    def _fresh_globals(self):
+        """
+        Returns a fresh set of globals as they are before the program starts compiling.
+        """
+        new_globals = {'__name__': __name__, '__doc__': None, '__package__': None,
+                '__loader__': __loader__, '__spec__': None, '__annotations__': {},
+                '__builtins__': _copy.deepcopy(globals()['__builtins__'])}
+
+        # Now remove any problematic builtins from the globals
+        rem_builtins = []
+        for key in rem_builtins:
+            new_globals['__builtins__'].pop(key)
+
+        return new_globals
+
+    def _fresh_global_symbol_table(self):
+        return SymbolTable()
+
+    def _run_file(self, file_path):
+        """
+        Runs a file, importing first if need be.
+        """
+        file = self._import_file(file_path)
         result = Interpreter.visit(file.ast, Context(file.file_path, globals=self._globals, symbol_table=self._global_symbol_table), InterpreterFlags())
 
         if result.error:
             raise result.error
 
-        print(result.value)
-
-    # -------------------------------------------------------------------------
-    # Helper Methods
+        return result.value # return the tokens for the file.
 
     def _import_file(self, file_path):
         """
@@ -1985,6 +2003,7 @@ class Compiler:
         """
         file_path = os.path.abspath(file_path)
 
+        # If file already imported, just return the file
         if file_path in self._files_by_path:
             return self._files_by_path[file_path]
 
@@ -1995,7 +2014,8 @@ class Compiler:
             file.raw_text = f.read() # Raw text that the file contains
 
         file.tokens = Tokenizer(file.file_path, file.raw_text).tokenize()
-        #print(file.tokens)
+
+        # Returns a ParseResult, so need to see if any errors. If no Errors, then set file.ast to the actual abstract syntax tree
         file.ast = Parser(file.tokens).parse()
 
         if file.ast.error is not None:
@@ -2038,56 +2058,5 @@ class Command:
         self.key_params = key_params
         self.text_group = text_group # This will be run for the command
 
-def main(input_file_path, output_file_path=None):
-    """
-    Takes a file path to the input plaintext file and a file path to the output
-        file.
-
-    Returns the error if the file was not successfully compiled and a string containing
-         the file path to the new file otherwise.
-    """
-
-    if output_file_path is None:
-        output_file_path = input_file_path.split('.')
-
-        if len(output_file_path) > 1:
-            output_file_path[-1] = 'pdf'
-        else:
-            output_file_path.append('pdf')
-
-        output_file_path = '.'.join(output_file_path)
-
-    try:
-        c = Compiler(input_file_path, output_file_path)
-        c.compile_pdf()
-    except Error as e:
-        return e
-    return output_file_path
 
 
-if __name__ == "__main__":
-    import argparse
-
-    p = argparse.ArgumentParser(description='A program that compiles pdfs from plain-text files.')
-    p.add_argument('input_file_path', type=str,
-            help='The path to the main file that you are compiling from.')
-    p.add_argument('-o', '--output_file_path', type=str, nargs='?', const=None,
-            help='The path to the output file you want. Without this, the output file is just the input file path with the ending changed to .pdf')
-    #p.add_argument('-f', '--verbosity', type=int,
-            #help='The level of logging you want.')
-    #p.add_argument('--continous', action="store_true"
-            #help='Continuouly compile file every time it is resaved.')
-    args = p.parse_args()
-
-
-    #print('Beginning File Compilition!')
-
-    res = main(args.input_file_path, args.output_file_path)
-
-    if not isinstance(res, str):
-        print('\n\nAn Error Occured\n', end='')
-        print('\tA fatal error occured while compiling your PDF. Your PDF was not compiled fully.\n\n', end='')
-        print(res.as_string())
-    else:
-        #print(f'File Created Successfully! New file created at: {res}')
-        pass

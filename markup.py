@@ -1,4 +1,5 @@
 from constants import ALIGNMENT, SCRIPT, STRIKE_THROUGH, UNDERLINE
+from placer.templates import TextInfo
 
 def assert_bool(val):
     assert isinstance(val, (bool, None)), f'Can only be True, False, or None. {val} was given instead.'
@@ -8,18 +9,10 @@ class Markup:
     A Markup for a range of MarkedUpText.
     """
     def __init__(self):
-        # Enum Fields (Accept enum values from Constants)
-        self._alignment = None
-        self._underlined = None
-        self._strikethrough = None
-        self._script = None # Normal script, subscript, superscript
-
-        # Boolean (True/False) Fields
-        self._bold = None
-        self._italics = None
+        self._text_info = TextInfo()
         self._paragraph_break = None # Only applies to the start of the markup
 
-        self._callbacks = []
+        self._second_pass_python = []
 
     def add_callback(self, function):
         """
@@ -36,21 +29,21 @@ class Markup:
 
     def copy(self):
         m = Markup()
-        m.alignment = self._alignment
-        m.underlined = self._underlined
-        m.strikethrough = self._strikethrough
-        m.script = self._script
-
-        m.bold = self._bold
-        m.italics = self._italics
+        m._text_info = self._text_info.copy()
         m.paragraph_break = self._paragraph_break
-
-        m.callbacks = [f for f in self._callbacks]
+        return m
 
     # --------------------------------
     # Methods for accessing fields
 
     # Enum Fields
+
+    def text_info(self):
+        return self._text_info
+
+    def set_text_info(self, text_info):
+        assert isinstance(text_info, TextInfo), f'Text info must be of type TextInfo, not {text_info}.'
+        self._text_info = text_info
 
     def alignment(self):
         return self._alignment
@@ -98,6 +91,20 @@ class Markup:
     def set_italics(self, boolean=True):
         assert_bool(boolean)
         self._italics = boolean
+
+    # Other Fields
+
+    def python(self):
+        return self._second_pass_python
+
+    def add_python(self, python_token):
+        self._second_pass_python.append(python_token)
+
+    def callbacks(self):
+        return self._callbacks
+
+    def add_callback(self, callback_function):
+        self._callbacks.append(callback_function)
 
 
 class MarkupStart:

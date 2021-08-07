@@ -19,7 +19,9 @@ This is also a Test.
 
 
 \bold = (\content) {
-    BOLD-> \content <-BOLD
+    \>print('BOLD')
+    \content
+    \>print('BOLD')
 }
 
 This is also a Test down here.
@@ -27,3 +29,5 @@ This is also a Test down here.
 \>print('Hello')
 
 \bold{this should be bold }
+
+

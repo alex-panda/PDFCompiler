@@ -46,78 +46,92 @@ COLORS = ('transparent', 'aliceblue', 'antiquewhite', 'aqua', 'aquamarine', 'azu
 'tan', 'teal', 'thistle', 'tomato', 'turquoise', 'violet', 'wheat', 'white', 'whitesmoke',
 'yellow', 'yellowgreen', 'fidblue', 'fidred', 'fidlightblue')
 
+_page_sizes = [getattr(pagesizes, page_size) for page_size in PAGE_SIZES]
+_page_sizes = named_tuple('PageSizes', PAGE_SIZES)(*[(Decimal(h), Decimal(w)) for h, w in _page_sizes])
+_page_sizes_dict = {page_size:getattr(_page_sizes, page_size) for page_size in PAGE_SIZES}
+
+_units = named_tuple('Units', UNITS)(*[Decimal(getattr(units, unit)) for unit in UNITS])
+_units_dict = {unit:getattr(units, unit) for unit in UNITS}
+
+_colors = named_tuple('Colors', COLORS)(*[getattr(colors, color) for color in COLORS])
+_colors_dict = {color:getattr(colors, color) for color in COLORS}
+
 class ToolBox:
     """
     A toolbox of various useful things like Constants and whatnot
     """
-    def __init__(self):
-        page_sizes = [getattr(pagesizes, page_size) for page_size in PAGE_SIZES]
-        self._page_sizes = named_tuple('PageSizes', PAGE_SIZES)(*[(Decimal(h), Decimal(w)) for h, w in page_sizes])
-        self._page_sizes_dict = {page_size:getattr(self._page_sizes, page_size) for page_size in PAGE_SIZES}
-
-        self._units = named_tuple('Units', UNITS)(*[Decimal(getattr(units, unit)) for unit in UNITS])
-        self._units_dict = {unit:getattr(self._units, unit) for unit in UNITS}
-
-        self._colors = named_tuple('Colors', COLORS)(*[getattr(colors, color) for color in COLORS])
-        self._colors_dict = {color:getattr(colors, color) for color in COLORS}
-
     # ---------------------------------
-    # Constants made available for coders coding in python
+    # Constants made available for coders coding in python in their pdfo files
 
-    def colors(self):
-        return self._colors
+    @staticmethod
+    def colors():
+        return _colors
 
-    def page_sizes(self):
-        return self._page_sizes
+    @staticmethod
+    def page_sizes():
+        return _page_sizes
 
-    def units(self):
-        return self._units
+    @staticmethod
+    def units():
+        return _units
 
-    def alignment(self):
+    @staticmethod
+    def alignment():
         return ALIGNMENT
 
-    def script(self):
+    @staticmethod
+    def script():
         return SCRIPT
 
-    def strike_through(self):
+    @staticmethod
+    def strike_through():
         return STRIKE_THROUGH
 
-    def underline(self):
+    @staticmethod
+    def underline():
         return UNDERLINE
 
     # ---------------------------------
     # Methods that allow a standard way for users to get constants from commands
 
-    def color_for_str(self, color_name_str):
+    @staticmethod
+    def color_for_str(color_name_str):
         trimmed = trimmed(color_name_str)
         lowered = trimmed.lower()
 
-        if lowered in self._colors_dict:
-            return self._colors_dict[lowered]
+        if lowered in _colors_dict:
+            return _colors_dict[lowered]
 
         raise Exception(f'{color_name_str} is not a valid name for a color.')
 
-    def page_size_for_str(self, page_size_str):
-        return self._page_sizes_dict[trimmed(page_size_str).upper()]
+    @staticmethod
+    def page_size_for_str(page_size_str):
+        return _page_sizes_dict[trimmed(page_size_str).upper()]
         raise Exception(f'{page_size_str} is not a valid page size.')
 
-    def unit_for_str(self, unit_name_str):
-        return self._units_dict[trimmed(unit_name_str).lower()]
+    @staticmethod
+    def unit_for_str(unit_name_str):
+        return _units_dict[trimmed(unit_name_str).lower()]
         raise Exception(f'{unit_name_str} is not a valid unit.')
 
-    def alignment_for_str(self, alignment_name):
-        return ALIGN.validate(alignment_name)
+    @staticmethod
+    def alignment_for_str(alignment_name):
+        return ALIGNMENT.validate(alignment_name)
 
-    def script_for_str(self, script_name):
+    @staticmethod
+    def script_for_str(script_name):
         return SCRIPT.validate(script_name)
 
-    def strike_through_for_str(self, script_name):
+    @staticmethod
+    def strike_through_for_str(script_name):
         return STRIKE_THROUGH.validate(script_name)
 
-    def underline_for_str(self, script_name):
+    @staticmethod
+    def underline_for_str(script_name):
         return UNDERLINE.validate(script_name)
 
-    def length_for_str(self, length_as_str):
+    @staticmethod
+    def length_for_str(length_as_str):
         """
         Takes a length as a string, such as '4pica' or '4mm' and converts it
             into a Decimal of the specified size.
@@ -127,7 +141,8 @@ class ToolBox:
     # ---------------------------------
     # Other Helpful Methods
 
-    def assure_landscape(self, page_size):
+    @staticmethod
+    def assure_landscape(page_size):
         """
         Returns a tuple of the given page_size in landscape orientation, even
             if it is already/given in landscape orientation.
@@ -137,7 +152,8 @@ class ToolBox:
         h, w = pagesizes.landscape(page_size)
         return (assure_decimal(h), assure_decimal(w))
 
-    def assure_portrait(self, page_size):
+    @staticmethod
+    def assure_portrait(page_size):
         """
         Returns a tuple of the given page_size in portrait orientation, even
             if it is already/given in portrait orientation.
