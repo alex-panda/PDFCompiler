@@ -41,7 +41,7 @@ def draw_str(canvas:Canvas, point:Point, string:str):
     """
     Draws a string at the given Point on the given canvas.
     """
-    print(f'{point}, {string}')
+    #print(f'{point}, {string}')
     canvas.drawString(float(point.x()), float(point.y()), string)
 
 
@@ -280,25 +280,33 @@ class PDFComponent(HasTextInfo):
         return self._left_margin
 
     def set_left_margin(self, new_left):
-        self.set_margins(new_left, self.right_margin(), self.top_margin(), self.bottom_margin())
+        inner_size, inner_offset= self.inner_size(), self.inner_offset()
+        self._left_margin = assure_decimal(new_left)
+        self.set_inner_size(inner_size); self.set_inner_offset(inner_offset)
 
     def right_margin(self):
         return self._right_margin
 
     def set_right_margin(self, new_right):
-        self.set_margins(self.left_margin(), new_right, self.top_margin(), self.bottom_margin())
+        inner_size, inner_offset= self.inner_size(), self.inner_offset()
+        self._right_margin = assure_decimal(new_right)
+        self.set_inner_size(inner_size); self.set_inner_offset(inner_offset)
 
     def top_margin(self):
         return self._top_margin
 
     def set_top_margin(self, new_top):
-        self.set_margins(self.left_margin(), self.right_margin(), new_top, self.bottom_margin())
+        inner_size, inner_offset= self.inner_size(), self.inner_offset()
+        self._top_margin = assure_decimal(new_top)
+        self.set_inner_size(inner_size); self.set_inner_offset(inner_offset)
 
     def bottom_margin(self):
         return self._bottom_margin
 
     def set_bottom_margin(self, new_bottom):
-        self.set_margins(self.left_margin(), self.right_margin(), self.top_margin(), new_bottom)
+        inner_size, inner_offset= self.inner_size(), self.inner_offset()
+        self._bottom_margin = assure_decimal(new_bottom)
+        self.set_inner_size(inner_size); self.set_inner_offset(inner_offset)
 
     def margins(self):
         return self.left_margin(), self.right_margin(), self.top_margin(), self.bottom_margin()
@@ -414,7 +422,7 @@ class PDFComponent(HasTextInfo):
         Returns the Point object that represents an offset from the top-left
             corner of the Page the component is on.
         """
-        return self._rect.point()
+        return self._rect.point().copy()
 
     def set_inner_size(self, height, width=None):
         """
@@ -458,10 +466,10 @@ class PDFComponent(HasTextInfo):
         return (self.total_height(), self.total_width())
 
     def set_total_height(self, height):
-        self._rect.set_height(height - self.top_margin() - self.bottom_margin())
+        self.set_inner_height(height - self.top_margin() - self.bottom_margin())
 
     def set_total_width(self, width):
-        self._rect.set_width(width - self.left_margin() - self.right_margin())
+        self.set_inner_width(width - self.left_margin() - self.right_margin())
 
     def total_height(self):
         """
@@ -548,10 +556,7 @@ class PDFPage(PDFComponent):
         Sets the page size for this page. You can either use a tuple of height,
             width or you can give the height and width directly.
         """
-        if width:
-            self.set_total_size(height[0], height[1])
-        else:
-            self.set_total_size(height, width)
+        self.set_total_size(height, width)
 
     def fill_rows_first(self):
         return self._fill_rows_first
@@ -687,7 +692,7 @@ class PDFColumn(PDFComponent):
         initialized with all the words that will be in it in it.
         """
         self._paragraph_lines.append(paragraph_line)
-        print(f'{self.total_offset()}, {paragraph_line.total_height()} * {paragraph_line.text_info().line_spacing()}, {self.height_used()}')
+        #print(f'{self.total_offset()}, {paragraph_line.total_height()} * {paragraph_line.text_info().line_spacing()}, {self.height_used()}')
         paragraph_line.set_total_offset(self.total_offset() + Point(0, self.height_used()))
         paragraph_line.place_words()
         self._height_used += paragraph_line.total_height() * paragraph_line.text_info().line_spacing()
@@ -885,8 +890,10 @@ class PDFParagraphLine(PDFComponent):
         return height
 
     def draw(self, canvas):
+        line_height = self.inner_height()
+
         for word in self._pdfwords:
-            word.draw(canvas)
+            word.draw(canvas, line_height)
 
     def __repr__(self):
         return f'{self.__class__.__name__}(words={self._pdfwords})'
@@ -915,8 +922,6 @@ class PDFWord(InlinePDFObj):
         super().__init__()
         self._text = ''
         self._space_after = False
-        self._width = None
-        self._height = None
 
     def text(self):
         """
@@ -955,15 +960,17 @@ class PDFWord(InlinePDFObj):
 
         self.set_inner_width(stringWidth(self.text(), font_name, font_size))
 
-    def height(self):
-        return self._height
-
-    def width(self):
-        return self._width
-
-    def draw(self, canvas):
+    def draw(self, canvas, line_height=None):
+        """
+        Draw the Word to the given canvas.
+        """
         self.text_info().apply_to_canvas(canvas)
-        draw_str(canvas, self.inner_offset(), self.text())
+        draw_point = self.inner_offset()
+
+        if line_height is not None:
+            draw_point += Point(0, line_height)
+
+        draw_str(canvas, draw_point, self.text())
 
     def __repr__(self):
         return f'{self.__class__.__name__}(text={self.text()})'
@@ -1267,7 +1274,6 @@ class PDFPageTemplate(Template):
         default.set_margins(1*inch, 1*inch, 1*inch, 1*inch)
         default.set_page_size(ToolBox.page_sizes().A4)
         default.set_grid(1, 1)
-        default.set_inner_offset(0, 30)
 
         super().__init__(default, PDFColumnTemplate())
 
