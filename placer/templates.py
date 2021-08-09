@@ -484,12 +484,23 @@ class PDFComponent(HasTextInfo):
         new.set_text_info(self.text_info().copy())
         return new
 
+    def full_copy(self):
+        """
+        Copies not just the metadata like TextInfo, margins, offset, etc., but
+            the things such as the PDFPages in the PDFDocument and PDFWords in
+            the PDFParagraph.
+        """
+        return self.copy()
+
     def clear(self):
         self._rect.clear()
         self.set_margins(0, 0, 0, 0)
         self.text_info().clear()
 
 class PDFDocument(PDFComponent):
+    """
+    The main and top-level class of the PDFHierarchy.
+    """
     def __init__(self):
         super().__init__()
         self._pages = []
@@ -973,6 +984,7 @@ class Template:
     def __init__(self, default, child_template, reset_children_on_next=True):
         self._concretes = []
         self._repeating = []
+        self._one_use = []
 
         self._callbacks = []
 
@@ -1031,14 +1043,18 @@ class Template:
         i = self._state_index
 
         if copy:
-            if 0 <= i < len(self._concretes):
+            if len(self._one_use) > 0:
+                return self._one_use[0] if peek else self._one_use.pop(0)
+            elif 0 <= i < len(self._concretes):
                 return self._concretes[i].copy()
             elif 0 <= i < len(self._repeating):
                 return self._repeating[i].copy()
             else:
                 return self._default.copy()
         else:
-            if 0 <= i < len(self._concretes):
+            if len(self._one_use) > 0:
+                return self._one_use[0] if peek else self._one_use.pop(0)
+            elif 0 <= i < len(self._concretes):
                 return self._concretes[i]
             elif 0 <= i < len(self._repeating):
                 return self._repeating[i]
@@ -1086,6 +1102,20 @@ class Template:
 
     def repeating(self):
         return self._repeating
+
+    def add_one_use(self, new):
+        """
+        These are instances of this Templates child type that will only be used
+            and then will be thrown away. Useful for things like starting
+            chapters with the first paragraph being special and thus putting
+            it in the one_use so that it is used once and then thrown out. The
+            one_use objects are used in First-In-Last-Out order (a queue).
+        """
+        self._assert_child(new)
+        self._one_use.append(new)
+
+    def one_use(self):
+        return self._one_use
 
     def add_callback(self, callback_function):
         """
