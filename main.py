@@ -1,4 +1,5 @@
 from compiler import Compiler, Error
+import os
 
 
 def main(input_file_path, output_file_path=None):
@@ -9,6 +10,8 @@ def main(input_file_path, output_file_path=None):
     Returns the error if the file was not successfully compiled and a string containing
          the file path to the new file otherwise.
     """
+
+    input_file_path = os.path.abspath(input_file_path)
 
     if output_file_path is None:
         output_file_path = input_file_path.split('.')
@@ -45,6 +48,9 @@ if __name__ == "__main__":
 
     #print('Beginning File Compilition!')
 
+    input_file_path = os.path.abspath(args.input_file_path)
+
+    print(f'Compiling file at\n\t{input_file_path}\n\t.\n\t.\n\t.')
     res = main(args.input_file_path, args.output_file_path)
 
     if not isinstance(res, str):
@@ -52,5 +58,4 @@ if __name__ == "__main__":
         print('\tA fatal error occured while compiling your PDF. Your PDF was not compiled fully.\n\n', end='')
         print(res.as_string())
     else:
-        #print(f'File Created Successfully! New file created at: {res}')
-        pass
+        print(f'File Compiled Successfully! New file created at:\n\t{res}')

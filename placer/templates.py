@@ -157,9 +157,6 @@ class TextInfo:
         Merges this TextInfo with another so that this one changes its attributes
             to match all the NON-None attributes of the other one.
         """
-        if other_text_info is None:
-            return
-
         for atr in self.__slots__:
             if getattr(other_text_info, atr) is not None:
                 setattr(self, atr, getattr(other_text_info, atr))
@@ -412,19 +409,19 @@ class PDFComponent(HasTextInfo):
         """
         return self.total_offset() + Point(self.left_margin(), self.top_margin())
 
-    def set_inner_size(self, height, width=None):
+    def set_inner_size(self, width, height=None):
         """
         Sets the size of the component inside the margins.
         """
-        if width is None:
-            width = height[1]
-            height = height[0]
+        if height is None:
+            height = width[1]
+            width = width[0]
 
         self.set_inner_height(height)
         self.set_inner_width(width)
 
     def inner_size(self):
-        return (self.inner_height(), self.inner_width())
+        return (self.inner_width(), self.inner_height())
 
     def set_inner_height(self, height):
         self.set_total_height(assure_decimal(height) + self.top_margin() + self.bottom_margin())
@@ -444,19 +441,19 @@ class PDFComponent(HasTextInfo):
         """
         return self.total_width() - self.left_margin() - self.right_margin()
 
-    def set_total_size(self, height, width=None):
+    def set_total_size(self, width, height=None):
         """
         Sets the size of the component with margins taken into account.
         """
-        if width is None:
-            width = height[1]
-            height = height[0]
+        if height is None:
+            height = width[1]
+            width = width[0]
 
         self.set_total_height(height)
         self.set_total_width(width)
 
     def total_size(self):
-        return (self.total_height(), self.total_width())
+        return (self.total_width(), self.total_height())
 
     def set_total_height(self, height):
         self._rect.set_height(height)
@@ -551,12 +548,12 @@ class PDFPage(PDFComponent):
     def page_size(self):
         return self.total_size()
 
-    def set_page_size(self, height, width=None):
+    def set_page_size(self, width, height=None):
         """
         Sets the page size for this page. You can either use a tuple of height,
             width or you can give the height and width directly.
         """
-        self.set_total_size(height, width)
+        self.set_total_size(width, height)
 
     def fill_rows_first(self):
         return self._fill_rows_first
@@ -624,7 +621,7 @@ class PDFPage(PDFComponent):
 
             # Place the column
             next_col.set_point(Point(curr_x_offset, curr_y_offset))
-            next_col.set_size(col_height, col_width)
+            next_col.set_size(col_width, col_height)
 
             # Add the column to the list of columns
             self._col_rects.append(next_col)
@@ -665,7 +662,7 @@ class PDFPage(PDFComponent):
             col._call_end_callbacks()
 
     def draw(self, canvas):
-        canvas.setPageSize((self.total_width(), self.total_height()))
+        canvas.setPageSize(self.page_size())
 
         for col in self._cols:
             col.draw(canvas)
@@ -710,9 +707,9 @@ class PDFColumn(PDFComponent):
             by PDFParagrahLines).
         """
         x, y = self.inner_offset().xy()
-        height, width = self.inner_size()
+        width, height = self.inner_size()
 
-        return Rectangle(x, y + self.height_used(), height - self.height_used(), width)
+        return Rectangle(x, y + self.height_used(), width, height - self.height_used())
 
     def draw(self, canvas):
         for pl in self._paragraph_lines:
@@ -758,7 +755,7 @@ class PDFParagraphLine(PDFComponent):
         if align == ALIGNMENT.CENTER:
             # Now nudge the words that are aligned left to the right so that
             # they are centered
-            nudge_amt = (self.inner_width() - self._curr_words_width()) / 2
+            nudge_amt = (self.inner_width() - self.curr_words_width()) / 2
 
             for word in self._pdfwords:
                 word.set_total_offset(word.total_offset() + Point(nudge_amt, 0))
@@ -766,14 +763,14 @@ class PDFParagraphLine(PDFComponent):
         elif align == ALIGNMENT.RIGHT:
             # Now nudge the words that are aligned left to the right so that
             # they are right aligned
-            nudge_amt = self.inner_width() - self._curr_words_width()
+            nudge_amt = self.inner_width() - self.curr_words_width()
 
             for word in self._pdfwords:
                 word.set_total_offset(word.total_offset() + Point(nudge_amt, 0))
 
         elif align == ALIGNMENT.JUSTIFIED:
             # Now nudge each word to the right so that they are equally spaced
-            nudge_amt = (self.inner_width() - self._curr_words_width()) / len(self._pdfwords) - 1
+            nudge_amt = (self.inner_width() - self.curr_words_width()) / len(self._pdfwords) - 1
 
             for i, word in enumerate(self._pdfwords):
                 if i != 0:
@@ -798,7 +795,7 @@ class PDFParagraphLine(PDFComponent):
             also return True if the line used up all if its available height
             and False otherwise.
         """
-        available_height, available_width = self.inner_size()
+        available_width, available_height = self.inner_size()
         width_used = False
         height_used = False
         leftover_words = []
@@ -840,7 +837,7 @@ class PDFParagraphLine(PDFComponent):
             self._pdfwords = []
             return leftover_words, True, width_used
 
-        self.set_inner_size(self.curr_words_height(), self.curr_words_width())
+        self.set_inner_size(self.curr_words_width(), self.curr_words_height())
 
         return (leftover_words, False, width_used) if len(leftover_words) > 0 else (None, False, width_used)
 
@@ -1004,7 +1001,7 @@ class Template:
         next = self.next(peek=True, copy=False)
         text_info.merge(next.text_info())
 
-        if self.child_template() is None or next == end_template_type:
+        if self.child_template() is None or isinstance(next, end_template_type):
             return text_info
 
         return self.child_template().merge_text_info(text_info, end_template_type)
@@ -1140,7 +1137,7 @@ class PDFDocumentTemplate(Template):
         # Set Defaults for text on the pages
         t = default.text_info()
         t.set_script(SCRIPT.NORMAL)
-        t.set_alignment(ALIGNMENT.LEFT)
+        t.set_alignment(ALIGNMENT.RIGHT)
 
         t.set_font_name('Times-Roman')
         t.set_font_size(12)
@@ -1156,7 +1153,7 @@ class PDFDocumentTemplate(Template):
         t.set_italics(False)
         t.set_can_split_words(False)
 
-        t.set_line_spacing(1.5)
+        t.set_line_spacing(2)
 
         super().__init__(default, PDFPageTemplate())
 
@@ -1245,13 +1242,7 @@ class PDFPageTemplate(Template):
 
         # Set Defaults for Pages
         default.set_margins(1*inch, 1*inch, 1*inch, 1*inch)
-        #default.set_page_size(ToolBox.page_sizes().A4)
-        page_size = (10000, 1000)
-        default.set_page_size(page_size)
-        print(f'desired page size: {page_size}')
-        print(f'default page size: {default.page_size()}')
-        print(f'default inner page size: {default.inner_size()}')
-        print(f'default inner width: {default.inner_width()}')
+        default.set_page_size(ToolBox.page_sizes().A4)
         default.set_grid(1, 1)
 
         super().__init__(default, PDFColumnTemplate())

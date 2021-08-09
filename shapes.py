@@ -91,8 +91,8 @@ class Rectangle:
         corner of the ENTIRE PDF and a Height and Width that show the area of
         the PDF that the rectangle takes up.
     """
-    def __init__(self, x=0, y=0, h=0, w=0, p=0):
-        self.set_all(x, y, h, w, p)
+    def __init__(self, x=0, y=0, w=0, h=0, p=None):
+        self.set_all(x, y, w, h, p)
 
     def point(self):
         return self._point
@@ -114,30 +114,30 @@ class Rectangle:
         self._width = assure_decimal(other)
 
     def size(self):
-        return self.height(), self.width()
+        return self.width(), self.height()
 
-    def set_size(self, height, width=None):
-        if width is None:
-            self.set_height(height[0])
-            self.set_width(height[1])
+    def set_size(self, width, height=None):
+        if height is None:
+            self.set_width(width[0])
+            self.set_height(width[1])
         else:
-            self.set_height(height)
             self.set_width(width)
+            self.set_height(height)
 
-    def set_all(self, x=0, y=0, h=0, w=0, p=0):
+    def set_all(self, x=0, y=0, w=0, h=0, p=None):
         """
         Sets the Rectangle's placement and dimensions. Either takes
             x, y, height, width or height, width, p=point
         """
-        if p:
+        if p is not None:
             self.set_point(p)
             # If p is specified, x and y should be the height and width
             self.set_height(x)
             self.set_width(y)
         else:
             self.set_point(Point(x, y))
-            self.set_height(h)
             self.set_width(w)
+            self.set_height(h)
 
     # Things that cannot be set but are provided for convenience
 
@@ -176,7 +176,7 @@ class Rectangle:
         return ((sx >= ox and sy >= oy) and (sox <= oox and soy <= ooy))
 
     def copy(self):
-        return Rectangle(self.x(), self.y(), self.height(), self.width())
+        return Rectangle(self.x(), self.y(), self.width(), self.height())
 
     def clear(self):
         self.set_all(0, 0, 0, 0)

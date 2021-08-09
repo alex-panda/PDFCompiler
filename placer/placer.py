@@ -154,7 +154,6 @@ class Placer:
         """
         cpl = self.curr_paragraph_line()
 
-
         # Check if the previous paragraphLine should be added to the current column
         if cpl is not None and cpl.word_count() > 0 and self.curr_column() is not None:
             avail_area = (cc := self.curr_column()).available_area()
@@ -192,9 +191,7 @@ class Placer:
 
             # Create a new paragraph line if there is not one currently (it is
             #   added to the current paragraph but not current Column)
-            if (cpl := self.curr_paragraph_line()) is None:
-                self.new_paragraph_line()
-                cpl = self.curr_paragraph_line()
+            cpl = self.curr_paragraph_line()
 
             #   set inner_size of current paragraph line so that it knows how
             #       much space is available for it.
@@ -203,14 +200,12 @@ class Placer:
             # Now try to place the word in the current paragraph line
             curr_words, need_new_col, width_used = cpl.add_words(curr_words)
 
-            if width_used:
-                print(f'Width Used: {cc.available_area().size()}')
-
             if cpl.word_count() > 0 and width_used and not need_new_col:
                 cpl.set_total_offset(cc.inner_offset() + Point(0, cc.height_used()))
                 cpl.place_words()
                 self.curr_column().add_paragraph_line(cpl)
                 self.new_paragraph_line()
+
 
             if need_new_col:
                 self.new_column()
