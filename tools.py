@@ -4,17 +4,40 @@ from constants import WHITE_SPACE_CHARS
 def assure_decimal(val):
     return Decimal(val)
 
-def str_till(pattern, start_pos, string):
-    """
-    Returns the string until the match, and the match itself, or None, None if
-        there was no match.
-    """
-    match = pattern.search(string, start_pos)
+def assert_instance(obj, types, var_name=None, or_none=True):
+    if not (isinstance(obj, types) or (or_none and obj is None)):
+        if var_name is None:
+            var_name = 'This'
+        string = f'{var_name} is supposed to be one of these types: {types}'
 
-    if match:
-        return string[start_pos:match.start()], match
-    else:
-        return None, None
+        if or_none:
+            string += ' or None'
+
+        string += f'\nbut it was {obj}'
+        raise AssertionError(string)
+
+
+def assert_subclass(obj, types, var_name=None, or_none=True):
+    obj = type(obj)
+    if not issubclass(obj, types) or (or_none and obj is None):
+        if var_name is None:
+            var_name = 'This'
+        string = f'{var_name} is supposed to be a subclass of {types}'
+
+        if or_none:
+            string += ' or None'
+
+        string += f'\nbut it was {obj}'
+        raise AssertionError(string)
+
+
+def draw_str(canvas_obj, point_obj, string:str):
+    """
+    Draws a string at the given Point on the given canvas.
+    """
+    #print(f'{point_obj}, {string}')
+    canvas_obj.drawString(float(point_obj.x()), float(point_obj.y()), string)
+
 
 def is_escaped(pos, text, chars_that_can_be_escaped):
     if not (text[pos] in chars_that_can_be_escaped):

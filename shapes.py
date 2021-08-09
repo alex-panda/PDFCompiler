@@ -113,6 +113,9 @@ class Rectangle:
     def set_width(self, other):
         self._width = assure_decimal(other)
 
+    def size(self):
+        return self.height(), self.width()
+
     def set_size(self, height, width=None):
         if width is None:
             self.set_height(height[0])
@@ -120,9 +123,6 @@ class Rectangle:
         else:
             self.set_height(height)
             self.set_width(width)
-
-    def size(self):
-        return self.height(), self.width()
 
     def set_all(self, x=0, y=0, h=0, w=0, p=0):
         """

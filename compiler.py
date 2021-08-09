@@ -2019,21 +2019,7 @@ class Compiler:
         file.ast = Parser(file.tokens).parse()
 
         if file.ast.error is not None:
-            if isinstance(file.ast.error, list):
-                print('\nThere are multiple possible reasons that an error occured, so here are all of them:\n')
-
-                print(f'{file.tokens}\n')
-
-                string = '\n\n'
-                for error in file.ast.error:
-                    if isinstance(error, Error):
-                        string += f'{error.as_string()}\n\n'
-                    else:
-                        string += f'{error}\n\n'
-
-                raise Exception(string)
-            else:
-                raise file.ast.error
+            raise file.ast.error
         else:
             file.ast = file.ast.node
 

@@ -4,45 +4,13 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfgen.canvas import Canvas
 from reportlab.lib.colors import HexColor, Color, CMYKColor
 
-from tools import assure_decimal
+from tools import assure_decimal, assert_instance, assert_subclass, draw_str
 from constants import TT, ALIGNMENT, ALIGNMENT, SCRIPT, STRIKE_THROUGH, UNDERLINE
 
 from shapes import Point, Rectangle
 
 from toolbox import ToolBox
 from decimal import Decimal
-
-def assert_instance(obj, types, var_name=None, or_none=True):
-    if not (isinstance(obj, types) or (or_none and obj is None)):
-        if var_name is None:
-            var_name = 'This'
-        string = f'{var_name} is supposed to be one of these types: {types}'
-
-        if or_none:
-            string += ' or None'
-
-        string += f'\nbut it was {obj}'
-        raise AssertionError(string)
-
-def assert_subclass(obj, types, var_name=None, or_none=True):
-    obj = type(obj)
-    if not issubclass(obj, types) or (or_none and obj is None):
-        if var_name is None:
-            var_name = 'This'
-        string = f'{var_name} is supposed to be a subclass of {types}'
-
-        if or_none:
-            string += ' or None'
-
-        string += f'\nbut it was {obj}'
-        raise AssertionError(string)
-
-def draw_str(canvas:Canvas, point:Point, string:str):
-    """
-    Draws a string at the given Point on the given canvas.
-    """
-    #print(f'{point}, {string}')
-    canvas.drawString(float(point.x()), float(point.y()), string)
 
 
 class TextInfo:
@@ -92,7 +60,7 @@ class TextInfo:
 
     def set_line_spacing(self, new):
         assert_instance(new, (int, Decimal, float), 'line_spacing')
-        self._line_spacing = new
+        self._line_spacing = assure_decimal(new)
 
     # ---------
 
@@ -280,47 +248,53 @@ class PDFComponent(HasTextInfo):
         return self._left_margin
 
     def set_left_margin(self, new_left):
-        inner_size, inner_offset= self.inner_size(), self.inner_offset()
+        rect = self.total_rect()
         self._left_margin = assure_decimal(new_left)
-        self.set_inner_size(inner_size); self.set_inner_offset(inner_offset)
+        self.set_total_rect(rect)
 
     def right_margin(self):
         return self._right_margin
 
     def set_right_margin(self, new_right):
-        inner_size, inner_offset= self.inner_size(), self.inner_offset()
+        rect = self.total_rect()
         self._right_margin = assure_decimal(new_right)
-        self.set_inner_size(inner_size); self.set_inner_offset(inner_offset)
+        self.set_total_rect(rect)
 
     def top_margin(self):
         return self._top_margin
 
     def set_top_margin(self, new_top):
-        inner_size, inner_offset= self.inner_size(), self.inner_offset()
+        rect = self.total_rect()
         self._top_margin = assure_decimal(new_top)
-        self.set_inner_size(inner_size); self.set_inner_offset(inner_offset)
+        self.set_total_rect(rect)
 
     def bottom_margin(self):
         return self._bottom_margin
 
     def set_bottom_margin(self, new_bottom):
-        inner_size, inner_offset= self.inner_size(), self.inner_offset()
+        rect = self.total_rect()
         self._bottom_margin = assure_decimal(new_bottom)
-        self.set_inner_size(inner_size); self.set_inner_offset(inner_offset)
+        self.set_total_rect(rect)
 
     def margins(self):
         return self.left_margin(), self.right_margin(), self.top_margin(), self.bottom_margin()
 
-    def set_margins(self, left=0, right=0, top=0, bottom=0):
+    def set_margins(self, left, right=None, top=None, bottom=None):
         """
         Sets all the margins for the PDFComponent.
+
+        Can either give the new margins directly or give a tuple of them.
         """
-        inner_size, inner_offset= self.inner_size(), self.inner_offset()
+        if right is None:
+            # Then left should be a tuple of them
+            left, right, top, bottom = left
+
+        rect = self.total_rect()
         self._left_margin = assure_decimal(left)
         self._right_margin = assure_decimal(right)
         self._top_margin = assure_decimal(top)
         self._bottom_margin = assure_decimal(bottom)
-        self.set_inner_size(inner_size); self.set_inner_offset(inner_offset)
+        self.set_total_rect(rect)
 
     # Margins End
     # --------------
@@ -374,17 +348,30 @@ class PDFComponent(HasTextInfo):
         assert_subclass(parent, PDFComponent, 'parent', or_none=False)
         self._parent = parent
 
+    # ------------------
+    # Inner and Total Placement/Size Start
+
     def total_rect(self):
         rect = Rectangle()
         rect.set_point(self.total_offset())
         rect.set_size(self.total_size())
         return rect
 
+    def set_total_rect(self, rect):
+        assert_instance(rect, Rectangle, 'rect', or_none=False)
+        self.set_total_offset(rect.point().copy())
+        self.set_total_size(rect.size())
+
     def inner_rect(self):
         rect = Rectangle()
-        rect.set_point(self.inner_offset())
+        rect.set_point(self.inner_offset().point())
         rect.set_size(self.inner_size())
         return rect
+
+    def set_inner_rect(self, rect):
+        assert_instance(rect, Rectangle, 'rect', or_none=False)
+        self.set_inner_offset(rect.point())
+        self.set_inner_size(rect.size())
 
     def set_total_offset(self, x, y=None):
         """
@@ -395,11 +382,12 @@ class PDFComponent(HasTextInfo):
             x = Point(x, y)
         else:
             Point._assure_point(x)
+            x = x.copy()
 
-        self.set_inner_offset(x + Point(self.left_margin(), self.top_margin()))
+        self._rect.set_point(x)
 
     def total_offset(self):
-        return self.inner_offset() - Point(self.left_margin(), self.top_margin())
+        return self._rect.point().copy()
 
     def set_inner_offset(self, x, y=None):
         """
@@ -415,41 +403,46 @@ class PDFComponent(HasTextInfo):
             Point._assure_point(x)
             x = x.copy()
 
-        self._rect.set_point(x)
+        self.set_total_offset(x - Point(self.left_margin(), self.top_margin()))
 
     def inner_offset(self):
         """
         Returns the Point object that represents an offset from the top-left
             corner of the Page the component is on.
         """
-        return self._rect.point().copy()
+        return self.total_offset() + Point(self.left_margin(), self.top_margin())
 
     def set_inner_size(self, height, width=None):
         """
         Sets the size of the component inside the margins.
         """
-        self._rect.set_size(height, width)
+        if width is None:
+            width = height[1]
+            height = height[0]
+
+        self.set_inner_height(height)
+        self.set_inner_width(width)
 
     def inner_size(self):
         return (self.inner_height(), self.inner_width())
 
     def set_inner_height(self, height):
-        self._rect.set_height(height)
+        self.set_total_height(assure_decimal(height) + self.top_margin() + self.bottom_margin())
 
     def set_inner_width(self, width):
-        self._rect.set_width(width)
+        self.set_total_width(assure_decimal(width) + self.left_margin() + self.right_margin())
 
     def inner_height(self):
         """
         Height inside margins.
         """
-        return self._rect.height()
+        return self.total_height() - self.top_margin() - self.bottom_margin()
 
     def inner_width(self):
         """
         Width inside margins.
         """
-        return self._rect.width()
+        return self.total_width() - self.left_margin() - self.right_margin()
 
     def set_total_size(self, height, width=None):
         """
@@ -459,35 +452,38 @@ class PDFComponent(HasTextInfo):
             width = height[1]
             height = height[0]
 
-        self.set_total_width(width)
         self.set_total_height(height)
+        self.set_total_width(width)
 
     def total_size(self):
         return (self.total_height(), self.total_width())
 
     def set_total_height(self, height):
-        self.set_inner_height(height - self.top_margin() - self.bottom_margin())
+        self._rect.set_height(height)
 
     def set_total_width(self, width):
-        self.set_inner_width(width - self.left_margin() - self.right_margin())
+        self._rect.set_width(width)
 
     def total_height(self):
         """
         Height with margins.
         """
-        return self.inner_height() + self.top_margin() + self.bottom_margin()
+        return self._rect.height()
 
     def total_width(self):
         """
         Width with margins.
         """
-        return self.inner_width() + self.left_margin() + self.right_margin()
+        return self._rect.width()
+
+    # Inner and Total Placement/Size End
+    # ------------------
 
     def copy(self):
         new = self.__class__()
-        new.set_inner_size(self.inner_size())
-        new.set_inner_offset(self.inner_offset())
-        new.set_margins(*self.margins())
+        new.set_margins(self.margins())
+        new.set_total_size(self.total_size())
+        new.set_total_offset(self.total_offset())
         new.set_text_info(self.text_info().copy())
         return new
 
@@ -522,7 +518,7 @@ class PDFDocument(PDFComponent):
         canvas.save()
 
     def _add_page(self, page):
-        assert_instance(page, PDFPage)
+        assert_instance(page, PDFPage, 'page', or_none=False)
         page.set_parent(self)
         self._pages.append(page)
         page._page_num = self.page_count()
@@ -544,9 +540,13 @@ class PDFPage(PDFComponent):
         self._num_cols = 1
         self._page_num = None
         self._fill_rows_first = False
+        self._col_rects = [] # The rectangles that contain each column
         self._cols = []
 
         self._curr_col_idx = -1 # The index of the Column that the Placer is currently putting ParagraphLines in
+
+    def page_num(self):
+        return self._page_num
 
     def page_size(self):
         return self.total_size()
@@ -598,34 +598,36 @@ class PDFPage(PDFComponent):
     def num_rows(self):
         return self._num_rows
 
-    def _create_cols(self, template):
+    def _add_col(self, new_col):
+        assert_instance(new_col, PDFColumn, 'new_col', or_none=False)
+        self._cols.append(new_col)
+
+    def _create_col_rects(self):
         """
         Creates the PDFColumn objects for this PDFPage.
         """
-        assert len(self._cols) == 0, f'The columns for this page have already been created. Number of PDFColumns: {len(self._cols)}'
+        assert len(self._col_rects) == 0, f'The columns for this page have already been created. Number of PDFColumns: {len(self._cols)}'
         assert self._num_rows >= 0 and self._num_cols >= 0, f'The numbers of columns and rows for a PDFPage must both be atleast 0. They are (row_count, column_count): ({self._num_rows}, {self._num_cols})'
 
         if self._num_rows == 0 or self._num_cols == 0:
             # No need to create any Column objects whatsoever
             return
 
+        curr_x_offset, curr_y_offset = self.inner_offset().xy()
         col_width = self.inner_width() / self._num_cols
         col_height = self.inner_height() / self._num_rows
-
-        curr_x_offset, curr_y_offset = self.inner_offset().xy()
 
         # create the Column objects and place them on the page.
         for i in range(self._num_rows * self._num_cols):
             # Create new column
-            next_col = template.next_column(peek=False)
+            next_col = Rectangle()
 
             # Place the column
-            next_col.set_total_offset(curr_x_offset, curr_y_offset)
-            next_col.set_total_size(col_height, col_width)
-            next_col.set_parent(self)
+            next_col.set_point(Point(curr_x_offset, curr_y_offset))
+            next_col.set_size(col_height, col_width)
 
             # Add the column to the list of columns
-            self._cols.append(next_col)
+            self._col_rects.append(next_col)
 
             # Figure out where the next column will be placed.
             if self.fill_rows_first():
@@ -646,16 +648,15 @@ class PDFPage(PDFComponent):
                     curr_x_offset += col_width
                     curr_y_offset = 0
 
-        for col in self._cols:
-            col._call_placed_callbacks()
-
-    def _next_column(self):
+    def _next_column_rect(self, peek=True):
         """
         returns the next Column that the placer should put text lines into or
             None if there are no more Columns on this Page.
         """
-        self._curr_col_idx += 1
-        return self._cols[self._curr_col_idx] if self._curr_col_idx < len(self._cols) else None
+        if not peek:
+            self._curr_col_idx += 1
+
+        return self._col_rects[self._curr_col_idx] if self._curr_col_idx < len(self._col_rects) else None
 
     def _call_end_callbacks(self):
         super()._call_end_callbacks()
@@ -664,7 +665,7 @@ class PDFPage(PDFComponent):
             col._call_end_callbacks()
 
     def draw(self, canvas):
-        canvas.setPageSize(self.page_size())
+        canvas.setPageSize((self.total_width(), self.total_height()))
 
         for col in self._cols:
             col.draw(canvas)
@@ -693,8 +694,6 @@ class PDFColumn(PDFComponent):
         """
         self._paragraph_lines.append(paragraph_line)
         #print(f'{self.total_offset()}, {paragraph_line.total_height()} * {paragraph_line.text_info().line_spacing()}, {self.height_used()}')
-        paragraph_line.set_total_offset(self.total_offset() + Point(0, self.height_used()))
-        paragraph_line.place_words()
         self._height_used += paragraph_line.total_height() * paragraph_line.text_info().line_spacing()
 
     def height_used(self):
@@ -710,8 +709,8 @@ class PDFColumn(PDFComponent):
             for use by PDFParagrahLines (the area that has not already been used
             by PDFParagrahLines).
         """
-        x, y = self.total_offset().xy()
-        height, width = self.total_size()
+        x, y = self.inner_offset().xy()
+        height, width = self.inner_size()
 
         return Rectangle(x, y + self.height_used(), height - self.height_used(), width)
 
@@ -805,7 +804,7 @@ class PDFParagraphLine(PDFComponent):
         leftover_words = []
 
         for word in list_of_pdfwords:
-            assert_subclass(word, InlinePDFObj, 'pdfword', or_none=False)
+            assert_instance(word, PDFWord, 'pdfword', or_none=False)
 
             if width_used:
                 leftover_words.append(word)
@@ -820,6 +819,7 @@ class PDFParagraphLine(PDFComponent):
             if self.curr_words_width() > available_width:
                 leftover_words.append(self._pdfwords.pop())
                 width_used = True
+                continue
 
             if self.curr_words_height() > available_height:
                 # Width was fine but this line's height is too much so need to
@@ -831,19 +831,18 @@ class PDFParagraphLine(PDFComponent):
         if height_used:
             # Return all the words in this line, both already on the line and
             #   trying to be added to the line.
-            words = self._pdfwords
+            leftover_words = self._pdfwords
 
             for word in list_of_pdfwords:
-                if not (word in words):
-                    words.append(word)
+                if not (word in leftover_words):
+                    leftover_words.append(word)
 
             self._pdfwords = []
+            return leftover_words, True, width_used
 
-            return words, True, width_used
+        self.set_inner_size(self.curr_words_height(), self.curr_words_width())
 
-        self.set_inner_size(self.curr_words_width(), self.curr_words_height())
-
-        return leftover_words if len(leftover_words) > 0 else None, False, width_used
+        return (leftover_words, False, width_used) if len(leftover_words) > 0 else (None, False, width_used)
 
     def curr_words_width(self):
         """
@@ -857,10 +856,10 @@ class PDFParagraphLine(PDFComponent):
         last_word_idx = len(self._pdfwords) - 1
 
         for i, word in enumerate(self._pdfwords):
-            if i == last_word_idx:
-                word.set_space_after(False)
-            else:
+            if i < last_word_idx and self._pdfwords[i + 1].space_before():
                 word.set_space_after(True)
+            else:
+                word.set_space_after(False)
 
             word.calc_dims()
 
@@ -898,29 +897,12 @@ class PDFParagraphLine(PDFComponent):
     def __repr__(self):
         return f'{self.__class__.__name__}(words={self._pdfwords})'
 
-class InlinePDFObj(PDFComponent):
-    def calc_dims(self):
-        """
-        Calculate the dimensions of the PDF object (if needed).
-        """
-        raise NotImplementedError()
 
-    def height(self):
-        """
-        Returns the Height of the PDFObject
-        """
-        raise NotImplementedError()
-
-    def width(self):
-        """
-        Returns the Width of the PDFObject
-        """
-        raise NotImplementedError()
-
-class PDFWord(InlinePDFObj):
+class PDFWord(PDFComponent):
     def __init__(self):
         super().__init__()
         self._text = ''
+        self._space_before = True
         self._space_after = False
 
     def text(self):
@@ -928,7 +910,7 @@ class PDFWord(InlinePDFObj):
         Returns the Text that this word contains. If space_after is true, then
             a space will be appended to the text that is returned.
         """
-        if self._space_after:
+        if self.space_after():
             return self._text + ' '
         else:
             return self._text
@@ -945,6 +927,15 @@ class PDFWord(InlinePDFObj):
     def set_space_after(self, boolean):
         self._space_after = boolean
 
+    def space_before(self):
+        return self._space_before
+
+    def set_space_before(self, boolean):
+        """
+        Whether there was a space before the word in the original text.
+        """
+        self._space_before = boolean
+
     def calc_dims(self):
         """
         Calculate the dimensions of this word with its current TextInfo.
@@ -956,8 +947,8 @@ class PDFWord(InlinePDFObj):
         from reportlab.pdfbase.pdfmetrics import stringWidth
         font_name = self.text_info().font_name()
         font_size = self.text_info().font_size()
-        self.set_inner_height(Decimal(1.2) * font_size)
 
+        self.set_inner_height(font_size)
         self.set_inner_width(stringWidth(self.text(), font_name, font_size))
 
     def draw(self, canvas, line_height=None):
@@ -982,11 +973,9 @@ class Template:
         paragraph/paragraph line/word is supposed to look out by creating the
         objects for them.
     """
-    def __init__(self, default, child_template):
+    def __init__(self, default, child_template, reset_children_on_next=True):
         self._concretes = []
         self._repeating = []
-
-        self._state_index = 0
 
         self._callbacks = []
 
@@ -995,6 +984,9 @@ class Template:
         self._template_for_type = type(default)
 
         self._curr_instance = None
+
+        self._reset_children_on_next = reset_children_on_next
+        self.reset_state()
 
     def set_default(self, new):
         self._assert_child(new)
@@ -1033,22 +1025,25 @@ class Template:
         Returns the next new instance of the class this Template is a Template
             for.
         """
-        i = self._state_index
-
         if not peek:
             self._state_index += 1
 
+            if self._reset_children_on_next and self.child_template():
+                self.child_template().reset_state()
+
+        i = self._state_index
+
         if copy:
-            if i in self._concretes:
+            if 0 <= i < len(self._concretes):
                 return self._concretes[i].copy()
-            elif i in self._repeating:
+            elif 0 <= i < len(self._repeating):
                 return self._repeating[i].copy()
             else:
                 return self._default.copy()
         else:
-            if i in self._concretes:
+            if 0 <= i < len(self._concretes):
                 return self._concretes[i]
-            elif i in self._repeating:
+            elif 0 <= i < len(self._repeating):
                 return self._repeating[i]
             else:
                 return self._default
@@ -1095,13 +1090,6 @@ class Template:
     def repeating(self):
         return self._repeating
 
-    def being_used(self):
-        """
-        Returns true when this template is being actively used to layout a
-            paragraph.
-        """
-        return self._being_used
-
     def add_callback(self, callback_function):
         """
         Callbacks are functions that will be called when an instance of
@@ -1126,8 +1114,6 @@ class Template:
             PDFWordTemplates.
         """
         new = self.__class__()
-        new.set_margins(*self.margins())
-        new._alignment = self._alignment
         new._default = self._default.copy()
         new._concretes = [c.copy() for c in self._concretes]
         new._repeating = [r.copy() for r in self._repeating]
@@ -1141,24 +1127,11 @@ class Template:
     def _assert_child(self, obj, or_none=False):
         assert_instance(obj, self._template_for_type, or_none=or_none)
 
-    def _next_state(self):
-        self._state_index += 1
-
-    def _reset_state(self):
-        self._state_index = 0
+    def reset_state(self):
+        self._state_index = -1
 
         if self.child_template():
-            self.child_template()._reset_state()
-
-    def _copy_state_indexes(self, other_template):
-        """
-        Sets the state indexes of this template to the state indexes of the
-            given template.
-        """
-        self._state_index = other_template._state_index
-
-        if self._child_template and other_template._child_template:
-            self._child_template._copy_state_indexes(other_template._child_template)
+            self.child_template().reset_state()
 
 class PDFDocumentTemplate(Template):
     def __init__(self):
@@ -1183,7 +1156,7 @@ class PDFDocumentTemplate(Template):
         t.set_italics(False)
         t.set_can_split_words(False)
 
-        t.set_line_spacing(2)
+        t.set_line_spacing(1.5)
 
         super().__init__(default, PDFPageTemplate())
 
@@ -1272,7 +1245,13 @@ class PDFPageTemplate(Template):
 
         # Set Defaults for Pages
         default.set_margins(1*inch, 1*inch, 1*inch, 1*inch)
-        default.set_page_size(ToolBox.page_sizes().A4)
+        #default.set_page_size(ToolBox.page_sizes().A4)
+        page_size = (10000, 1000)
+        default.set_page_size(page_size)
+        print(f'desired page size: {page_size}')
+        print(f'default page size: {default.page_size()}')
+        print(f'default inner page size: {default.inner_size()}')
+        print(f'default inner width: {default.inner_width()}')
         default.set_grid(1, 1)
 
         super().__init__(default, PDFColumnTemplate())
@@ -1284,8 +1263,7 @@ class PDFColumnTemplate(Template):
     """
     def __init__(self):
         default = PDFColumn()
-        super().__init__(default, PDFParagraphTemplate())
-
+        super().__init__(default, PDFParagraphTemplate(), reset_children_on_next=False)
 
 class PDFParagraphTemplate(Template):
     """
@@ -1295,9 +1273,9 @@ class PDFParagraphTemplate(Template):
     def __init__(self):
         default = PDFParagraph()
         super().__init__(default, PDFParagraphLineTemplate())
+
         first_par_line = default.copy()
         first_par_line.set_left_margin(Decimal(1 * inch))
-
         self.add_concrete(first_par_line)
 
 class PDFParagraphLineTemplate(Template):
