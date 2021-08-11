@@ -162,3 +162,20 @@ class ToolBox:
         """
         h, w = pagesizes.portrait(page_size)
         return (assure_decimal(h), assure_decimal(w))
+
+    @staticmethod
+    def string_size(string, text_info):
+        """
+        Returns the (width, height) of the given string based on the given
+            text_info object.
+        """
+        from reportlab.pdfbase.pdfmetrics import stringWidth
+
+        font_name = text_info.font_name()
+        font_size = text_info.font_size()
+
+        assert isinstance(font_name, str), f'The font_name of the given text_info must be of type str, not {font_name}'
+        assert isinstance(font_size, (int, float, Decimal)), f'The font_size of the given text_info must be of type int, float, or Decimal, not {font_name}'
+
+        return stringWidth(string, font_name, font_size), font_size
+

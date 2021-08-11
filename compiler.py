@@ -11,8 +11,8 @@ from reportlab.lib.units import inch, cm, mm, pica, toLength
 from reportlab.lib import units, colors, pagesizes as pagesizes
 
 from placer.placer import Placer
-from constants import CMND_CHARS, END_LINE_CHARS, ALIGNMENT, TT, TT_M, WHITE_SPACE_CHARS, NON_END_LINE_CHARS, COMPILED_REGEX
-from tools import assure_decimal, is_escaped, is_escaping, exec_python, eval_python, string_with_arrows, trimmed
+from constants import CMND_CHARS, END_LINE_CHARS, ALIGNMENT, TT, TT_M, WHITE_SPACE_CHARS, NON_END_LINE_CHARS, PB_NUM_TABS
+from tools import assure_decimal, is_escaped, is_escaping, exec_python, eval_python, string_with_arrows, trimmed, print_progress_bar
 from marked_up_text import MarkedUpText
 from markup import Markup, MarkupStart, MarkupEnd
 
@@ -174,8 +174,9 @@ class Tokenizer:
     """
     Takes raw text and tokenizes it.
     """
-    def __init__(self, file_path, file_text, starting_position=None):
+    def __init__(self, file_path, file_text, starting_position=None, print_progress_bar=False):
         super().__init__()
+        self._print_progress_bar = print_progress_bar
 
         if starting_position:
             # Parse assuming that you are starting at the given line and column int he file
@@ -334,8 +335,20 @@ class Tokenizer:
         if file:
             self._tokens.append(Token(TT.FILE_START, '<FILE START>', self._pos.copy()))
 
+        text_len = len(self._text)
+        print_progress = self._print_progress_bar
+        prefix = ('\t' * PB_NUM_TABS) + 'Tokenizing:'
+
+        if print_progress:
+            print_progress_bar(0, text_len, prefix)
+
         # By default, all text is plain text until something says otherwise
         while self._current_char is not None:
+
+            if print_progress:
+                print_progress_bar(self._pos.idx, text_len, prefix)
+
+
             cc = self._current_char
 
             t = None
@@ -412,6 +425,8 @@ class Tokenizer:
                 else:
                     # t must be a list of tokens
                     self._tokens.extend(t)
+
+        print_progress_bar(self._pos.idx, text_len, prefix)
 
         if self._unpaired_cbrackets > 0:
             raise InvalidSyntaxError(self._first_unpaired_bracket_pos.copy(), self._first_unpaired_bracket_pos.copy().advance(),
@@ -969,7 +984,11 @@ class Parser:
         approach to parsing, which is a far harder method of parsing to write
         a Parser for.
     """
-    def __init__(self, tokens):
+    def __init__(self, tokens, print_progress_bar=False):
+        self._print_progress_bar = print_progress_bar
+        self._progress_bar_prefix = ('\t' * PB_NUM_TABS) + '   Parsing:'
+        self._tokens_len = len(tokens)
+
         self._tokens = tokens
         self._tok_idx = -1
         self._current_tok = None
@@ -980,10 +999,17 @@ class Parser:
         Returns a ParseResult with either an error in res.error or a node in
             res.node
         """
+        if self._print_progress_bar:
+            print_progress_bar(self._tok_idx, self._tokens_len, self._progress_bar_prefix)
+
         if self._current_tok.type == TT.FILE_START:
             res = self._file()
         else:
             res = self._document()
+
+        if self._print_progress_bar:
+            print_progress_bar(self._tok_idx, self._tokens_len, self._progress_bar_prefix)
+
         return res
 
     # ------------------------------
@@ -1064,6 +1090,10 @@ class Parser:
         # will eat token if there, otherwise nothing
         self._eat_pb(res)
 
+
+        if self._print_progress_bar:
+            print_progress_bar(self._tok_idx, self._tokens_len, self._progress_bar_prefix)
+
         while True:
             # paragraph will be None if the try failed, otherwise it will be the
             #   new ParagraphNode
@@ -1082,6 +1112,8 @@ class Parser:
                 self._reverse(res)
                 break
             else:
+                if self._print_progress_bar:
+                    print_progress_bar(self._tok_idx, self._tokens_len, self._progress_bar_prefix)
                 paragraphs.append(paragraph)
 
         self._eat_pb(res)
@@ -1703,6 +1735,13 @@ class Interpreter:
         node.
     """
     @staticmethod
+    def main_visit(node, context, flags, print_progress=False):
+        """
+        Visits the main file for the 
+        """
+        Interpreter.visit(node, context, flags)
+
+    @staticmethod
     def visit(node, context, flags):
         method_name = f'_visit_{type(node).__name__}'
         method = getattr(Interpreter, method_name, Interpreter._no_visit_method)
@@ -1937,10 +1976,11 @@ class Interpreter:
 # Compiler Class
 
 class Compiler:
-    def __init__(self, input_file_path):
+    def __init__(self, input_file_path, print_progess_bars=False):
         self._commands = {}
         self._files_by_path = {}
         self._input_file_path = input_file_path
+        self._print_progress_bars = print_progess_bars
 
         self._globals = self._fresh_globals()
         self._global_symbol_table = self._fresh_global_symbol_table()
@@ -2010,13 +2050,13 @@ class Compiler:
         file = File(file_path)
         self._files_by_path[file_path] = file
 
-        with open(file_path) as f:
+        with open(file_path, encoding='utf-8', errors='ignore') as f:
             file.raw_text = f.read() # Raw text that the file contains
 
-        file.tokens = Tokenizer(file.file_path, file.raw_text).tokenize()
+        file.tokens = Tokenizer(file.file_path, file.raw_text, print_progress_bar=self._print_progress_bars).tokenize()
 
         # Returns a ParseResult, so need to see if any errors. If no Errors, then set file.ast to the actual abstract syntax tree
-        file.ast = Parser(file.tokens).parse()
+        file.ast = Parser(file.tokens, print_progress_bar=self._print_progress_bars).parse()
 
         if file.ast.error is not None:
             raise file.ast.error

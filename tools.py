@@ -1,8 +1,32 @@
 from decimal import Decimal
 from constants import WHITE_SPACE_CHARS
+from constants import PB_SUFFIX, PB_NUM_DECS, PB_LEN, PB_UNFILL, PB_FILL
 
 def assure_decimal(val):
     return Decimal(val)
+
+# Print iterations progress
+def print_progress_bar (iteration, total, prefix='', suffix=PB_SUFFIX, decimals=PB_NUM_DECS, length=PB_LEN, unfill=PB_UNFILL, fill=PB_FILL):
+    """
+    Call in a loop to create terminal progress bar
+    @params:
+        iteration   - Required  : current iteration (Int)
+        total       - Required  : total iterations (Int)
+        prefix      - Optional  : prefix string (Str)
+        suffix      - Optional  : suffix string (Str)
+        decimals    - Optional  : positive number of decimals in percent complete (Int)
+        length      - Optional  : character length of bar (Int)
+        fill        - Optional  : bar fill character (Str)
+        printEnd    - Optional  : end character (e.g. "\r", "\r\n") (Str)
+    """
+    percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
+    filledLength = int(length * iteration // total)
+    bar = fill * filledLength + unfill * (length - filledLength)
+
+    if iteration < total:
+        print(f'\r{prefix} |{bar}| {percent}% {suffix}', end='\r')
+    else:
+        print(f'\r{prefix} |{bar}| {percent}% {suffix}')
 
 def assert_instance(obj, types, var_name=None, or_none=True):
     if not (isinstance(obj, types) or (or_none and obj is None)):

@@ -75,7 +75,7 @@ class TextInfo:
         return self._font_size
 
     def set_font_size(self, new):
-        assert_instance(new, int, 'font_size')
+        assert_instance(new, (int, float, Decimal), 'font_size')
         self._font_size = new
 
     def font_color(self):
@@ -202,6 +202,17 @@ class TextInfo:
             assert 0.0 <= fcg <= 1.0, f'font_color_gray values must be between 0 and 1 inclusive, not {fcg}'
             canvas.setFillGray(fcg)
 
+    def __repr__(self):
+        string = f'{self.__class__.__name__}('
+        for i, a in enumerate(self.__slots__):
+            if i > 0:
+                string += ', '
+            attri_name = a[1:]
+            attr_val = getattr(self, a)
+            string += f'{attri_name}={attr_val}'
+        string += ')'
+        return string
+
 class HasTextInfo:
     def __init__(self):
         self._text_info = TextInfo()
@@ -210,7 +221,7 @@ class HasTextInfo:
         return self._text_info
 
     def set_text_info(self, new):
-        assert_instance(new, TextInfo, 'text_info')
+        assert_instance(new, TextInfo, 'text_info', or_none=False)
         self._text_info = new
 
 class PDFComponent(HasTextInfo):
@@ -230,9 +241,8 @@ class PDFComponent(HasTextInfo):
         # PDFPage
         self._parent = None
 
-        # A list of the callbacks that will be called after this PDFComponent
-        #   receives its final placement on the PDF
-        self._placed_callbacks = []
+        # Callbacks to be called when this PDFComponent is first "Created"
+        self._on_creation_callbacks = []
 
         # A list of callbacks that will be called after the entirety of the
         #   PDFDocument has been placed.
@@ -296,23 +306,35 @@ class PDFComponent(HasTextInfo):
     # Margins End
     # --------------
 
-    def placed_callbacks(self):
-        return self._placed_callbacks
+    def on_creation_callbacks(self):
+        return self._on_creation_callbacks
 
-    def add_placed_callback(self, callback):
+    def add_on_creation_callback(self, callback):
         """
-        Adds a placed callback to the PDFComponent. This callback function will
-            be called and given this PDFComponent when the PDFComponent is
-            placed for the final time and will not be messed with further by
-            the placer.
-        """
-        self._placed_callbacks.append(callback)
+        Adds a creation callback to the PDFComponent. This callback will be
+            called when this PDFComponent is first created and initialized with
+            its TextInfo. This is so that you can do things to it BEFORE the
+            program even begins to place it. For example, you could add a
+            callback that gives a PDFParagraphLine a left margin (to simulate a
+            tab indent) if
 
-    def _call_placed_callbacks(self):
+            pdf_component.text_info().alignment() == ALIGNMENT.LEFT
+
+            is True.
+
+        The callback will be called with this PDFComponent being given as an
+            argument.
         """
-        Runs all the placed callbacks for this PDFComponent
+        self._on_creation_callbacks.append(callback)
+
+    def clear_on_creation_callbacks(self):
+        self._on_creation_callbacks = []
+
+    def _call_on_creation_callbacks(self):
         """
-        for callback in self._placed_callbacks:
+        Runs all the on_creation callbacks for this PDFComponent
+        """
+        for callback in self._on_creation_callbacks:
             callback(self)
 
     def end_callbacks(self):
@@ -325,6 +347,9 @@ class PDFComponent(HasTextInfo):
             the entire PDFDocument has been placed.
         """
         self._end_callbacks.append(callback)
+
+    def clear_end_callbacks(self):
+        self._end_callbacks = []
 
     def _call_end_callbacks(self):
         """
@@ -482,6 +507,8 @@ class PDFComponent(HasTextInfo):
         new.set_total_size(self.total_size())
         new.set_total_offset(self.total_offset())
         new.set_text_info(self.text_info().copy())
+        new._on_creation_callbacks = self._on_creation_callbacks[:]
+        new._end_callbacks = self._end_callbacks[:]
         return new
 
     def full_copy(self):
@@ -496,6 +523,8 @@ class PDFComponent(HasTextInfo):
         self._rect.clear()
         self.set_margins(0, 0, 0, 0)
         self.text_info().clear()
+        self._on_creation_callbacks = []
+        self._end_callbacks = []
 
 class PDFDocument(PDFComponent):
     """
@@ -505,12 +534,18 @@ class PDFDocument(PDFComponent):
         super().__init__()
         self._pages = []
 
+    # ----------------------------------------
+    # Public methods in API
+
     def page_count(self):
         return len(self._pages)
 
     def pages(self):
         return self._pages
 
+    # This method is mainly for if you are using some sort of special case and
+    #   want to draw a compiled PDFDocument to canvas while not using the
+    #   Commandline tool
     def draw(self, output_file_path_or_canvas):
         """
         Draws the PDFDocument either to a canvas or to the output_file_path
@@ -525,12 +560,14 @@ class PDFDocument(PDFComponent):
 
         canvas.save()
 
+    # ----------------------------------------
+    # Private Methods
+
     def _add_page(self, page):
         assert_instance(page, PDFPage, 'page', or_none=False)
         page.set_parent(self)
         self._pages.append(page)
-        page._page_num = self.page_count()
-        page._call_placed_callbacks()
+        page._page_num = self.page_count() + 1
 
     def _call_end_callbacks(self):
         super()._call_end_callbacks()
@@ -540,6 +577,7 @@ class PDFDocument(PDFComponent):
 
     def __repr__(self):
         return f'{self.__class__.__name__}(pages={self._pages})'
+
 
 class PDFPage(PDFComponent):
     def __init__(self):
@@ -551,7 +589,15 @@ class PDFPage(PDFComponent):
         self._col_rects = [] # The rectangles that contain each column
         self._cols = []
 
+        self._parent_document = None
+
         self._curr_col_idx = -1 # The index of the Column that the Placer is currently putting ParagraphLines in
+
+    def parent_document(self):
+        return self._parent_document
+
+    def _set_parent_document(self, parent):
+        self._parent_document = parent
 
     def page_num(self):
         return self._page_num
@@ -610,52 +656,6 @@ class PDFPage(PDFComponent):
         assert_instance(new_col, PDFColumn, 'new_col', or_none=False)
         self._cols.append(new_col)
 
-    def _create_col_rects(self):
-        """
-        Creates the PDFColumn objects for this PDFPage.
-        """
-        assert len(self._col_rects) == 0, f'The columns for this page have already been created. Number of PDFColumns: {len(self._cols)}'
-        assert self._num_rows >= 0 and self._num_cols >= 0, f'The numbers of columns and rows for a PDFPage must both be atleast 0. They are (row_count, column_count): ({self._num_rows}, {self._num_cols})'
-
-        if self._num_rows == 0 or self._num_cols == 0:
-            # No need to create any Column objects whatsoever
-            return
-
-        curr_x_offset, curr_y_offset = self.inner_offset().xy()
-        col_width = self.inner_width() / self._num_cols
-        col_height = self.inner_height() / self._num_rows
-
-        # create the Column objects and place them on the page.
-        for i in range(self._num_rows * self._num_cols):
-            # Create new column
-            next_col = Rectangle()
-
-            # Place the column
-            next_col.set_point(Point(curr_x_offset, curr_y_offset))
-            next_col.set_size(col_width, col_height)
-
-            # Add the column to the list of columns
-            self._col_rects.append(next_col)
-
-            # Figure out where the next column will be placed.
-            if self.fill_rows_first():
-                curr_x_offset += col_width
-
-                # If have reached the last column, start next row
-                if ((i + 1) % self._num_cols) == 0:
-                    curr_y_offset += col_height
-                    curr_x_offset = 0
-
-            else:
-                curr_y_offset += col_height
-
-                # If have reached last column (not Column object but the last
-                #   column of the grid of Column objects) then start next
-                #   column
-                if ((i + 1) % self._num_rows) == 0:
-                    curr_x_offset += col_width
-                    curr_y_offset = 0
-
     def _next_column_rect(self, peek=True):
         """
         returns the next Column that the placer should put text lines into or
@@ -687,7 +687,27 @@ class PDFColumn(PDFComponent):
     def __init__(self):
         super().__init__()
         self._paragraph_lines = []
+        self._paragraphs = [] # These are the paragraphs that START in this Column
         self._height_used = 0
+
+        self._parent_page = None
+
+    def parent_page(self):
+        return self._parent_page
+
+    def _set_parent_page(self, parent):
+        self._parent_page = parent
+
+    def paragraphs(self):
+        """
+        Returns a list of all the paragraphs that START in this Column. If you
+            want to see all the columns that the paragraph is in then you need
+            to do call PDFColumn.parent_columns()
+        """
+        return self._paragraphs
+
+    def _add_paragraph(self, paragraph):
+        self._paragraphs.append(paragraph)
 
     def _call_end_callbacks(self):
         super()._call_end_callbacks()
@@ -695,13 +715,13 @@ class PDFColumn(PDFComponent):
         for par_line in self._paragraph_lines:
             par_line._call_end_callbacks()
 
-    def add_paragraph_line(self, paragraph_line):
+    def _add_paragraph_line(self, paragraph_line):
         """
-        Adds a paragraph line to this PDFColumn. The PDFColumn must be fully
-        initialized with all the words that will be in it in it.
+        Adds a paragraph line to this PDFColumn. The PDFParagrahLines must be
+            fully initialized with all the words that will be in them in them.
+            Their total height must also be their final total height.
         """
         self._paragraph_lines.append(paragraph_line)
-        #print(f'{self.total_offset()}, {paragraph_line.total_height()} * {paragraph_line.text_info().line_spacing()}, {self.height_used()}')
         self._height_used += paragraph_line.total_height() * paragraph_line.text_info().line_spacing()
 
     def height_used(self):
@@ -726,6 +746,13 @@ class PDFColumn(PDFComponent):
         for pl in self._paragraph_lines:
             pl.draw(canvas)
 
+    def _call_end_callbacks(self):
+        super()._call_end_callbacks()
+
+        # Call callbacks for paragraphs
+        for par in self._paragraphs:
+            par._call_end_callbacks()
+
     def __repr__(self):
         return f'{self.__class__.__name__}(paragraph_lines={self._paragraph_lines})'
 
@@ -735,9 +762,34 @@ class PDFParagraph(PDFComponent):
         self._space_between_lines = 0
         self._paragraph_lines = []
 
-    def add_paragraph_line(self, line):
+        self._parent_document = None
+        self._parent_columns = []
+
+    def parent_document(self):
+        return self._parent_document
+
+    def _set_parent_document(self, parent):
+        self._parent_document = parent
+
+    def parent_columns(self):
+        return self._parent_columns
+
+    def _add_parent_column(self, parent):
+        self._parent_columns.append(parent)
+
+    def paragraph_lines(self):
+        return self._paragraph_lines
+
+    def _add_paragraph_line(self, line):
         assert_instance(line, PDFParagraphLine, or_none=False)
         self._paragraph_lines.append(line)
+
+    def _call_end_callbacks(self):
+        super()._call_end_callbacks()
+
+        # Call callbacks for paragraphs
+        for par_line in self.paragraph_lines():
+            par_line._call_end_callbacks()
 
     def __repr__(self):
         return f'{self.__class__.__name__}(paragraph_lines={self._paragraph_lines})'
@@ -747,117 +799,45 @@ class PDFParagraphLine(PDFComponent):
         super().__init__()
         self._pdfwords = []
 
+        self._parent_paragraph = None
+        self._parent_column = None
+
+    def parent_paragraph(self):
+        return self._parent_paragraph
+
+    def _set_parent_paragraph(self, parent):
+        self._parent_paragraph = parent
+
+    def parent_column(self):
+        return self._parent_column
+
+    def _set_parent_column(self, parent):
+        self._parent_column = parent
+
+    def words(self):
+        return self._pdfwords
+
     def word_count(self):
         return len(self._pdfwords)
 
-    def place_words(self):
+    def realign(self, new_alignment):
         """
-        Actually places the words currently in this ParagrahLine depending on
-            what alignment this paragraph line is using.
+        Realigns this paragraph line to the given alignment.
+
+        NOTE: This should only be used in end_callbacks because the words will
+            not be positioned anymore after. If you use this in an on_creation
+            callback then you will not see the affects of this method since the
+            words will be realigned later.
         """
-        align = self.text_info().alignment()
+        from placer.placer import Placer
+        Placer._place_words_on_line(self, new_alignment)
 
-        # Align the words left
-        offset = self.inner_offset().copy()
-        for word in self._pdfwords:
-            word.set_total_offset(offset)
-            offset += Point(word.total_width(), 0)
-
-        if align == ALIGNMENT.CENTER:
-            # Now nudge the words that are aligned left to the right so that
-            # they are centered
-            nudge_amt = (self.inner_width() - self.curr_words_width()) / 2
-
-            for word in self._pdfwords:
-                word.set_total_offset(word.total_offset() + Point(nudge_amt, 0))
-
-        elif align == ALIGNMENT.RIGHT:
-            # Now nudge the words that are aligned left to the right so that
-            # they are right aligned
-            nudge_amt = self.inner_width() - self.curr_words_width()
-
-            for word in self._pdfwords:
-                word.set_total_offset(word.total_offset() + Point(nudge_amt, 0))
-
-        elif align == ALIGNMENT.JUSTIFIED:
-            # Now nudge each word to the right so that they are equally spaced
-            nudge_amt = (self.inner_width() - self.curr_words_width()) / len(self._pdfwords) - 1
-
-            for i, word in enumerate(self._pdfwords):
-                if i != 0:
-                    word.set_total_offset(word.total_offset() + Point(nudge_amt, 0))
-
-        elif align != ALIGNMENT.LEFT:
-            raise AssertionError(f'This PDFParagraphLine was had alignment {align}, which is not a valid alignment.')
-
-    def add_words(self, list_of_pdfwords):
+    def curr_width(self):
         """
-        Uses current inner_width to place the list of words
+        Returns the current width of this ParagraphLine according to the
+            inline_objects currently in it.
 
-        If all words could be placed, then None is returned, otherwise a list
-            of the words that could not be placed is returned.
-
-        Before this method is run, the line should have its inner_size set to
-            what is AVAILABLE for the line to use, and this method will set
-            the size back to what it actually used after it adds as many words
-            as possible.
-
-        In addition to the words that it could not place, this method will
-            also return True if the line used up all if its available height
-            and False otherwise.
-        """
-        available_width, available_height = self.inner_size()
-        width_used = False
-        height_used = False
-        leftover_words = []
-
-        for word in list_of_pdfwords:
-            assert_instance(word, PDFWord, 'pdfword', or_none=False)
-
-            if width_used:
-                leftover_words.append(word)
-                continue
-
-            # Try to add the word but if the paragraph_line is now too long
-            #   with it added, remove the word and append it to the leftover
-            #   words so that it can be added to the next paragraph line
-
-            self._pdfwords.append(word)
-
-            if self.curr_words_width() > available_width:
-                leftover_words.append(self._pdfwords.pop())
-                width_used = True
-                continue
-
-            if self.curr_words_height() > available_height:
-                # Width was fine but this line's height is too much so need to
-                #   put all these words on the next line (reached bottom of the
-                #   PDFColumn).
-                height_used = True
-                break
-
-        if height_used:
-            # Return all the words in this line, both already on the line and
-            #   trying to be added to the line.
-            leftover_words = self._pdfwords
-
-            for word in list_of_pdfwords:
-                if not (word in leftover_words):
-                    leftover_words.append(word)
-
-            self._pdfwords = []
-            return leftover_words, True, width_used
-
-        self.set_inner_size(self.curr_words_width(), self.curr_words_height())
-
-        return (leftover_words, False, width_used) if len(leftover_words) > 0 else (None, False, width_used)
-
-    def curr_words_width(self):
-        """
-        Returns the current width of this ParagraphLine according to the words
-            currently in it.
-
-        NOTE: This method iterates through all the words in this
+        NOTE: This method iterates through all the inline objects in this
             PDFParagraphLine every single time it is run.
         """
         total_width = 0
@@ -865,17 +845,18 @@ class PDFParagraphLine(PDFComponent):
 
         for i, word in enumerate(self._pdfwords):
             if i < last_word_idx and self._pdfwords[i + 1].space_before():
-                word.set_space_after(True)
+                word._space_after = True
             else:
-                word.set_space_after(False)
+                word._space_after = False
 
-            word.calc_dims()
+            if isinstance(word, PDFWord):
+                word.calc_dims()
 
             total_width += word.total_width()
 
         return total_width
 
-    def curr_words_height(self):
+    def curr_height(self):
         """
         Returns the current height of this PDFParagraphLine according to the
             words currently in it.
@@ -886,7 +867,8 @@ class PDFParagraphLine(PDFComponent):
         height = 0
 
         for word in self._pdfwords:
-            word.calc_dims()
+            if isinstance(word, PDFWord):
+                word.calc_dims()
 
             word_height = word.total_height()
             word_height += word.total_offset().y() - self.total_offset().y()
@@ -902,47 +884,61 @@ class PDFParagraphLine(PDFComponent):
         for word in self._pdfwords:
             word.draw(canvas, line_height)
 
+    def _call_end_callbacks(self):
+        super()._call_end_callbacks()
+
+        # Call callbacks for paragraphs
+        for word in self._pdfwords:
+            word._call_end_callbacks()
+
     def __repr__(self):
         return f'{self.__class__.__name__}(words={self._pdfwords})'
 
+class PDFInlineObject(PDFComponent):
+    """
+    A base class for objects that can be added to a PDFParagraphLine
+    """
+    def __init__(self):
+        super().__init__()
+        self._space_before = True
+        self._space_after = False # set by PDFParagraphLine when there should be a space after this word dependant on the space_before attribute of the next word.
 
-class PDFWord(PDFComponent):
+    def set_space_before(self, boolean):
+        """
+        Sets whether there should be a space before it (if it is not at the
+            beginning of new paragraph line)
+        """
+        assert_instance(boolean, bool, 'boolean', or_none=False)
+        self._space_before = boolean
+
+    def space_before(self):
+        return self._space_before
+
+class PDFWord(PDFInlineObject):
     def __init__(self):
         super().__init__()
         self._text = ''
-        self._space_before = True
-        self._space_after = False
+
+        self._parent_paragraph_line = None
+
+    def parent_paragraph_line(self):
+        return self._parent_paragraph_line
+
+    def _set_parent_paragraph_line(self, parent):
+        self._parent_paragraph_line = parent
 
     def text(self):
         """
         Returns the Text that this word contains. If space_after is true, then
             a space will be appended to the text that is returned.
         """
-        if self.space_after():
+        if self._space_after:
             return self._text + ' '
         else:
             return self._text
 
     def set_text(self, text):
         self._text = text
-
-    def space_after(self):
-        """
-        Whether there should be a space after the word.
-        """
-        return self._space_after
-
-    def set_space_after(self, boolean):
-        self._space_after = boolean
-
-    def space_before(self):
-        return self._space_before
-
-    def set_space_before(self, boolean):
-        """
-        Whether there was a space before the word in the original text.
-        """
-        self._space_before = boolean
 
     def calc_dims(self):
         """
@@ -952,12 +948,7 @@ class PDFWord(PDFComponent):
             be taken into account when this method calculates the dimensions of
             this PDFWord
         """
-        from reportlab.pdfbase.pdfmetrics import stringWidth
-        font_name = self.text_info().font_name()
-        font_size = self.text_info().font_size()
-
-        self.set_inner_height(font_size)
-        self.set_inner_width(stringWidth(self.text(), font_name, font_size))
+        self.set_inner_size(ToolBox.string_size(self.text(), self.text_info()))
 
     def draw(self, canvas, line_height=None):
         """
@@ -970,6 +961,9 @@ class PDFWord(PDFComponent):
             draw_point += Point(0, line_height)
 
         draw_str(canvas, draw_point, self.text())
+
+    def _call_end_callbacks(self):
+        super()._call_end_callbacks()
 
     def __repr__(self):
         return f'{self.__class__.__name__}(text={self.text()})'
@@ -1041,14 +1035,15 @@ class Template:
                 self.child_template().reset_state()
 
         i = self._state_index
+        rep_i = -1 if len(self._repeating) == 0 else i % len(self._repeating)
 
         if copy:
             if len(self._one_use) > 0:
-                return self._one_use[0] if peek else self._one_use.pop(0)
+                return self._one_use[0].copy() if peek else self._one_use.pop(0).copy()
             elif 0 <= i < len(self._concretes):
                 return self._concretes[i].copy()
-            elif 0 <= i < len(self._repeating):
-                return self._repeating[i].copy()
+            elif 0 <= rep_i < len(self._repeating):
+                return self._repeating[rep_i].copy()
             else:
                 return self._default.copy()
         else:
@@ -1056,8 +1051,8 @@ class Template:
                 return self._one_use[0] if peek else self._one_use.pop(0)
             elif 0 <= i < len(self._concretes):
                 return self._concretes[i]
-            elif 0 <= i < len(self._repeating):
-                return self._repeating[i]
+            elif 0 <= rep_i < len(self._repeating):
+                return self._repeating[rep_i]
             else:
                 return self._default
 
@@ -1144,9 +1139,25 @@ class Template:
         new._default = self._default.copy()
         new._concretes = [c.copy() for c in self._concretes]
         new._repeating = [r.copy() for r in self._repeating]
+        new._one_use   = [o.copy() for o in self.one_use]
         new._state_index = self._state_index
         new._child_template = self._child_template.copy()
         return new
+
+    def clear(self, recursive=True):
+        """
+        Clears this template. If recursive is True, then it will also
+            recursively clear all of its descendents.
+        """
+        self._default.clear()
+        self._concretes = []
+        self._repeating = []
+        self._one_use   = []
+        self._state_index = -1
+
+        if recursive and self.child_template():
+            self.child_template().clear()
+
 
     # -------------------------------------------------------------------------
     # Helper Methods not in API
@@ -1154,10 +1165,10 @@ class Template:
     def _assert_child(self, obj, or_none=False):
         assert_instance(obj, self._template_for_type, or_none=or_none)
 
-    def reset_state(self):
+    def reset_state(self, recursively=True):
         self._state_index = -1
 
-        if self.child_template():
+        if recursively and self.child_template():
             self.child_template().reset_state()
 
 class PDFDocumentTemplate(Template):
@@ -1167,7 +1178,7 @@ class PDFDocumentTemplate(Template):
         # Set Defaults for text on the pages
         t = default.text_info()
         t.set_script(SCRIPT.NORMAL)
-        t.set_alignment(ALIGNMENT.RIGHT)
+        t.set_alignment(ALIGNMENT.LEFT)
 
         t.set_font_name('Times-Roman')
         t.set_font_size(12)
@@ -1194,55 +1205,55 @@ class PDFDocumentTemplate(Template):
         """
         Returns a copy of what the next document should look like.
         """
-        text_info = self.merge_text_info(TextInfo(), PDFPage)
-        next_doc = self.next(peek)
-        next_doc.set_text_info(text_info)
-        return next_doc
+        next = self.next(peek)
+        next.set_text_info(self.merge_text_info(TextInfo(), PDFPage))
+        next._call_on_creation_callbacks()
+        return next
 
     def next_page(self, peek=True):
         """
         Returns a copy of what the next page should look like.
         """
-        text_info = self.merge_text_info(TextInfo(), PDFPage)
-        next_page = self.page_template().next(peek)
-        next_page.set_text_info(text_info)
-        return next_page
+        next = self.page_template().next(peek)
+        next.set_text_info(self.merge_text_info(TextInfo(), PDFPage))
+        next._call_on_creation_callbacks()
+        return next
 
     def next_column(self, peek=True):
         """
         Returns a copy of what the next column should look like.
         """
-        text_info = self.merge_text_info(TextInfo(), PDFColumn)
-        next_column = self.column_template().next(peek)
-        next_column.set_text_info(text_info)
-        return next_column
+        next = self.column_template().next(peek)
+        next.set_text_info(self.merge_text_info(TextInfo(), PDFColumn))
+        next._call_on_creation_callbacks()
+        return next
 
     def next_paragraph(self, peek=True):
         """
         Returns a copy of what the next paragraph should look like.
         """
-        text_info = self.merge_text_info(TextInfo(), PDFParagraph)
-        next_paragraph = self.paragraph_template().next(peek)
-        next_paragraph.set_text_info(text_info)
-        return next_paragraph
+        next = self.paragraph_template().next(peek)
+        next.set_text_info(self.merge_text_info(TextInfo(), PDFParagraph))
+        next._call_on_creation_callbacks()
+        return next
 
     def next_paragraph_line(self, peek=True):
         """
         Returns a copy of what the next paragrph line should look like.
         """
-        text_info = self.merge_text_info(TextInfo(), PDFParagraphLine)
-        next_paragraph_line = self.paragraph_line_template().next(peek)
-        next_paragraph_line.set_text_info(text_info)
-        return next_paragraph_line
+        next = self.paragraph_line_template().next(peek)
+        next.set_text_info(self.merge_text_info(TextInfo(), PDFParagraphLine))
+        next._call_on_creation_callbacks()
+        return next
 
     def next_word(self, peek=True):
         """
         Returns a copy of what the next word should look like.
         """
-        text_info = self.merge_text_info(TextInfo(), PDFWord)
-        next_word = self.word_template().next(peek)
-        next_word.set_text_info(text_info)
-        return next_word
+        next = self.word_template().next(peek)
+        next.set_text_info(self.merge_text_info(TextInfo(), PDFWord))
+        next._call_on_creation_callbacks()
+        return next
 
     # ---------------------------
     # More obvious ways of getting the different templates in the document
@@ -1293,19 +1304,38 @@ class PDFParagraphTemplate(Template):
     """
     def __init__(self):
         default = PDFParagraph()
-        super().__init__(default, PDFParagraphLineTemplate())
 
-        first_par_line = default.copy()
-        first_par_line.set_left_margin(Decimal(1 * inch))
-        self.add_concrete(first_par_line)
+        def spacing_callback(paragraph):
+            par_lines = paragraph.paragraph_lines()
+
+            if len(par_lines) > 0:
+                last_line = par_lines[-1]
+
+                if last_line.text_info().alignment() == ALIGNMENT.JUSTIFY:
+                    last_line.realign(ALIGNMENT.LEFT)
+
+        default.add_end_callback(spacing_callback)
+
+        super().__init__(default, PDFParagraphLineTemplate())
 
 class PDFParagraphLineTemplate(Template):
     def __init__(self):
         default = PDFParagraphLine()
         super().__init__(default, PDFWordTemplate())
 
+        first_line = default.copy()
+
+        def tab_callback(par_line):
+            if par_line.text_info().alignment() == ALIGNMENT.LEFT:
+                par_line.set_left_margin(0.5 * inch)
+
+        first_line.add_on_creation_callback(tab_callback)
+        self.add_concrete(first_line)
+
 class PDFWordTemplate(Template):
     def __init__(self):
         default = PDFWord()
         super().__init__(default, None)
+
+
 

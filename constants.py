@@ -1,9 +1,9 @@
-from aenum import Enum as aenum
+from enum import Enum
 import re
 from collections import namedtuple as named_tuple
 
 
-class Enum(str, aenum):
+class Enum(str, Enum):
     """A super-class used to give methods to very enum in the application."""
 
     @classmethod
@@ -18,10 +18,10 @@ class Enum(str, aenum):
         from marked_up_text import MarkedUpText
         from tools import trimmed
         val = obj
-        if isinstance(obj, (str, cls)) and ((val := trimmed(obj.lower()) in cls.values())):
-            return val
-        elif isinstance(obj, MarkedUpText) and ((val := trimmed(obj._text.lower()) in cls.values())):
-            return val
+        if isinstance(obj, (str, cls)) and trimmed(obj.lower()) in cls.values():
+            return trimmed(obj.lower())
+        elif isinstance(obj, MarkedUpText) and trimmed(obj._text.lower()) in cls.values():
+            return trimmed(obj._text.lower())
 
         if raise_exception:
             valid_values = ''
@@ -143,9 +143,16 @@ class TT_M:
 
 del nl
 
-class COMPILED_REGEX:
-    WHITE_SPACE = re.compile('(\s)+')
-    WHITE_SPACE_CHAR = re.compile('(\s)')
+#Progress Bar Constants
+# NOTE: Most of these are given as defaults in the print_progress_bar function
+#   located in tools.py and thus are not seen in the rest of the code.
+PB_SUFFIX = 'Complete'
+PB_NUM_DECS = 1 # Number of Decimals in the Percentage
+PB_LEN = 50 # How long the bar should be
+PB_UNFILL = '-'
+PB_FILL = '='
+PB_NUM_TABS = 1 # Number of tabs before the printed value
+
 
 # -----------------------------------------------------------------------------
 # API Constants (Constants that people compiling their pdf might actually see)
@@ -157,7 +164,7 @@ class ALIGNMENT(Enum):
     LEFT = 'left'
     CENTER = 'center'
     RIGHT = 'right'
-    JUSTIFIED = 'justified'
+    JUSTIFY = 'justify'
 
 class SCRIPT(Enum):
     NORMAL = 'normal'
@@ -165,12 +172,12 @@ class SCRIPT(Enum):
     SUB = 'sub'
 
 class STRIKE_THROUGH(Enum):
-    NONE = 'None'
+    NONE = 'none'
     SINGLE = 'single'
     DOUBLE = 'double'
 
 class UNDERLINE(Enum):
-    NONE = 'None'
+    NONE = 'none'
     SINGLE = 'single'
     DOUBLE = 'double'
     WAVE = 'wave'
