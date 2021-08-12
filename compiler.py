@@ -11,8 +11,8 @@ from reportlab.lib.units import inch, cm, mm, pica, toLength
 from reportlab.lib import units, colors, pagesizes as pagesizes
 
 from placer.placer import Placer
-from constants import CMND_CHARS, END_LINE_CHARS, ALIGNMENT, TT, TT_M, WHITE_SPACE_CHARS, NON_END_LINE_CHARS, PB_NUM_TABS
-from tools import assure_decimal, is_escaped, is_escaping, exec_python, eval_python, string_with_arrows, trimmed, print_progress_bar
+from constants import CMND_CHARS, END_LINE_CHARS, ALIGNMENT, TT, TT_M, WHITE_SPACE_CHARS, NON_END_LINE_CHARS, PB_NUM_TABS, PB_NAME_SPACE
+from tools import assure_decimal, is_escaped, is_escaping, exec_python, eval_python, string_with_arrows, trimmed, print_progress_bar, prog_bar_prefix
 from marked_up_text import MarkedUpText
 from markup import Markup, MarkupStart, MarkupEnd
 
@@ -335,11 +335,11 @@ class Tokenizer:
         if file:
             self._tokens.append(Token(TT.FILE_START, '<FILE START>', self._pos.copy()))
 
-        text_len = len(self._text)
         print_progress = self._print_progress_bar
-        prefix = ('\t' * PB_NUM_TABS) + 'Tokenizing:'
 
         if print_progress:
+            text_len = len(self._text)
+            prefix = prog_bar_prefix('Tokenizing', self._pos.file_path)
             print_progress_bar(0, text_len, prefix)
 
         # By default, all text is plain text until something says otherwise
@@ -426,7 +426,8 @@ class Tokenizer:
                     # t must be a list of tokens
                     self._tokens.extend(t)
 
-        print_progress_bar(self._pos.idx, text_len, prefix)
+        if print_progress:
+            print_progress_bar(self._pos.idx, text_len, prefix)
 
         if self._unpaired_cbrackets > 0:
             raise InvalidSyntaxError(self._first_unpaired_bracket_pos.copy(), self._first_unpaired_bracket_pos.copy().advance(),
@@ -985,10 +986,14 @@ class Parser:
         a Parser for.
     """
     def __init__(self, tokens, print_progress_bar=False):
-        self._print_progress_bar = print_progress_bar
-        self._progress_bar_prefix = ('\t' * PB_NUM_TABS) + '   Parsing:'
-        self._tokens_len = len(tokens)
 
+        # Progress Printing Info
+        self._print_progress_bar = print_progress_bar
+        self._tokens_len = len(tokens)
+        file_path = '' if self._tokens_len == 0 else tokens[0].start_pos.file_path
+        self._progress_bar_prefix = prog_bar_prefix('Parsing', file_path)
+
+        # Things needed to actually parse the tokens
         self._tokens = tokens
         self._tok_idx = -1
         self._current_tok = None
@@ -1735,11 +1740,19 @@ class Interpreter:
         node.
     """
     @staticmethod
-    def main_visit(node, context, flags, print_progress=False):
+    def visit_root(node, context, flags, print_progress=False):
         """
-        Visits the main file for the 
+        The visit to the root node of a AST.
         """
-        Interpreter.visit(node, context, flags)
+        if print_progress:
+            print(prog_bar_prefix('Running AST for', context.display_name, align='<', suffix=''))
+
+        result =  Interpreter.visit(node, context, flags)
+
+        if print_progress:
+            print(prog_bar_prefix('Done Running AST for', context.display_name, align='<', suffix=''))
+
+        return result
 
     @staticmethod
     def visit(node, context, flags):
@@ -1994,13 +2007,13 @@ class Compiler:
             the PDF multiple times to different files.
         """
         tokens = self._run_file(self._input_file_path)
-        return Placer(tokens, self._globals).create_pdf()
+        return Placer(tokens, self._globals, self._input_file_path, self._print_progress_bars).create_pdf()
 
     def compile_and_draw_pdf(self, output_pdf_path):
         """
         Convenience function that compiles and draws the PDF
         """
-        self.compile_pdf().draw(output_pdf_path)
+        self.compile_pdf().draw(output_pdf_path, print_progress=self._print_progress_bars)
 
     # -------------------------------------------------------------------------
     # Helper Methods
@@ -2028,7 +2041,7 @@ class Compiler:
         Runs a file, importing first if need be.
         """
         file = self._import_file(file_path)
-        result = Interpreter.visit(file.ast, Context(file.file_path, globals=self._globals, symbol_table=self._global_symbol_table), InterpreterFlags())
+        result = Interpreter.visit_root(file.ast, Context(file.file_path, globals=self._globals, symbol_table=self._global_symbol_table), InterpreterFlags(), self._print_progress_bars)
 
         if result.error:
             raise result.error
@@ -2050,8 +2063,38 @@ class Compiler:
         file = File(file_path)
         self._files_by_path[file_path] = file
 
-        with open(file_path, encoding='utf-8', errors='ignore') as f:
-            file.raw_text = f.read() # Raw text that the file contains
+        dec_error = False
+        try:
+            with open(file_path) as f:
+                file.raw_text = f.read() # Raw text that the file contains
+            dec_error = False
+        except:
+            dec_error = True
+
+        if dec_error:
+            try:
+                with open(file_path, encoding='utf-8') as f:
+                    file.raw_text = f.read() # Raw text that the file contains
+                dec_error = False
+
+            except:
+                dec_error = True
+
+        if dec_error:
+            try:
+                with open(file_path, encoding='utf-16') as f:
+                    file.raw_text = f.read() # Raw text that the file contains
+                dec_error = False
+            except:
+                dec_error = True
+
+        if dec_error:
+            try:
+                with open(file_path, encoding='utf-32') as f:
+                    file.raw_text = f.read() # Raw text that the file contains
+            except:
+                raise AssertionError('Could not decode the given file as utf-8, utf-16, or utf-32.')
+
 
         file.tokens = Tokenizer(file.file_path, file.raw_text, print_progress_bar=self._print_progress_bars).tokenize()
 

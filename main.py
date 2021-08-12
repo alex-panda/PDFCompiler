@@ -1,6 +1,6 @@
 from compiler import Compiler, Error
+from constants import OUT_TAB
 import os
-
 
 def main(input_file_path, output_file_path=None, print_progress_bars=False):
     """
@@ -52,22 +52,62 @@ if __name__ == "__main__":
     input_file_path = os.path.abspath(args.input_file_path)
 
     from time import time
+
     start_time = time()
 
-    print(f'\nCompiling file at\n\t{input_file_path}', end='')
+    print(f'\nCompiling file at\n{OUT_TAB}{input_file_path}', end='')
 
     if args.no_progress:
-        print('\n\t.\n\t.\n\t.')
-    else:
         print('\n', end='')
+    else:
+        print(f'\n{OUT_TAB}.\n{OUT_TAB}.\n{OUT_TAB}.')
 
-    res = main(args.input_file_path, args.output_file_path, not args.no_progress)
+    res = main(args.input_file_path, args.output_file_path, args.no_progress)
 
     if not isinstance(res, str):
         print('\n\nAn Error Occured\n', end='')
-        print('\tA fatal error occured while compiling your PDF. Your PDF was not compiled fully.\n\n', end='')
+        print(f'{OUT_TAB}A fatal error occured while compiling your PDF. Your PDF was not compiled fully.\n\n', end='')
         print(res.as_string())
     else:
-        print(f'File Compiled Successfully! Compiled File created at:\n\t{res}')
+        print(f'\n{OUT_TAB}File Compiled Successfully! Compiled File created at:\n{OUT_TAB}{OUT_TAB}{res}')
+
         end_time = time()
-        print('\tIt took {0:0.1f} seconds.'.format(end_time - start_time))
+
+        seconds = end_time - start_time
+        minutes = None
+        hours = None
+        days = None
+        years = None
+
+        if seconds > 60:
+            minutes = seconds // 60
+            seconds -= minutes * float(60)
+
+        if minutes and minutes > 60:
+            hours = minutes // 60
+            minutes %= 60
+
+        if hours and hours > 24:
+            days = hours // 24
+            hours %= 24
+
+        if days and days > 365:
+            years = days // 365
+            days %= 365
+
+        s = f'{OUT_TAB}{OUT_TAB}The full compilation took '
+
+        if years:
+            s += '{:d} Year(s), '.format(int(years))
+        if days:
+            s += '{:d} Day(s), '.format(int(days))
+        if hours:
+            s += '{:d} Hour(s), '.format(int(hours))
+        if minutes:
+            s += '{:d} Minute(s)'.format(int(minutes))
+            s += (', ' if hours else ' ') + 'and '
+        if seconds:
+            s += '{:0.3f} Second(s).'.format(seconds)
+
+        print(s)
+

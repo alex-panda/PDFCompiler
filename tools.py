@@ -1,9 +1,18 @@
 from decimal import Decimal
-from constants import WHITE_SPACE_CHARS
-from constants import PB_SUFFIX, PB_NUM_DECS, PB_LEN, PB_UNFILL, PB_FILL
+from constants import WHITE_SPACE_CHARS, OUT_TAB
+from constants import PB_SUFFIX, PB_NUM_DECS, PB_LEN, PB_UNFILL, PB_FILL, PB_NUM_TABS, PB_NAME_SPACE, PB_PREFIX_SPACE
+import os
 
 def assure_decimal(val):
     return Decimal(val)
+
+def prog_bar_prefix(prefix, file_path, align='^', suffix=':'):
+    file_path = file_path.split('\\')[-1].split('/')[-1]
+    file_path = file_path if len(file_path) <= PB_NAME_SPACE else file_path[-PB_NAME_SPACE:]
+    prefix = ('{' + (f':>{PB_PREFIX_SPACE}') + '}').format(prefix)
+    new_prefix = (OUT_TAB * PB_NUM_TABS) + prefix
+    new_prefix += (' {' + (f':{align}{PB_NAME_SPACE}') + '}').format(file_path) + suffix
+    return new_prefix
 
 # Print iterations progress
 def print_progress_bar (iteration, total, prefix='', suffix=PB_SUFFIX, decimals=PB_NUM_DECS, length=PB_LEN, unfill=PB_UNFILL, fill=PB_FILL):
@@ -16,17 +25,29 @@ def print_progress_bar (iteration, total, prefix='', suffix=PB_SUFFIX, decimals=
         suffix      - Optional  : suffix string (Str)
         decimals    - Optional  : positive number of decimals in percent complete (Int)
         length      - Optional  : character length of bar (Int)
+        unfil       - Optional  : bar not-filled character (Str)
         fill        - Optional  : bar fill character (Str)
-        printEnd    - Optional  : end character (e.g. "\r", "\r\n") (Str)
     """
     percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
-    filledLength = int(length * iteration // total)
+
+    # NOTE: this code makes the bar resize the best it can for the given command
+    #   line, but it like doubles the compilation time because of how many times
+    #   this method is run so I'm taking it out
+
+    #num_cols = os.get_terminal_size().columns
+    #full_len = len(prefix) + length + len(percent) + len(suffix) + len(" || % ") + 1
+    #if num_cols < full_len:
+    #    length -= full_len - num_cols
+    #    if length < 0:
+    #        length = 0
+
+    filledLength = length * iteration // total
     bar = fill * filledLength + unfill * (length - filledLength)
 
     if iteration < total:
-        print(f'\r{prefix} |{bar}| {percent}% {suffix}', end='\r')
+        print(f'\r{prefix} |{bar}| {percent}% {suffix}', end='')
     else:
-        print(f'\r{prefix} |{bar}| {percent}% {suffix}')
+        print(f'\r{prefix} |{bar}| {percent}% {suffix}', end='\n')
 
 def assert_instance(obj, types, var_name=None, or_none=True):
     if not (isinstance(obj, types) or (or_none and obj is None)):

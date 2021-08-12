@@ -214,6 +214,7 @@ class TextInfo:
         return string
 
 class HasTextInfo:
+    __slots__ = ['_text_info']
     def __init__(self):
         self._text_info = TextInfo()
 
@@ -225,6 +226,9 @@ class HasTextInfo:
         self._text_info = new
 
 class PDFComponent(HasTextInfo):
+    __slots__ = HasTextInfo.__slots__[:]
+    __slots__.extend(['_left_margin', '_right_margin', '_top_margin', '_bottom_margin',
+            '_rect', '_parent', '_on_creation_callbacks', '_end_callbacks'])
     def __init__(self):
         HasTextInfo.__init__(self)
         self._left_margin = 0
@@ -530,6 +534,8 @@ class PDFDocument(PDFComponent):
     """
     The main and top-level class of the PDFHierarchy.
     """
+    __slots__ = PDFComponent.__slots__[:]
+    __slots__.extend(['_pages'])
     def __init__(self):
         super().__init__()
         self._pages = []
@@ -546,17 +552,26 @@ class PDFDocument(PDFComponent):
     # This method is mainly for if you are using some sort of special case and
     #   want to draw a compiled PDFDocument to canvas while not using the
     #   Commandline tool
-    def draw(self, output_file_path_or_canvas):
+    def draw(self, output_file_path, print_progress=False):
         """
         Draws the PDFDocument either to a canvas or to the output_file_path
         """
-        if isinstance(output_file_path_or_canvas, Canvas):
-            canvas = output_file_path_or_canvas
-        else:
-            canvas = Canvas(output_file_path_or_canvas, bottomup=0)
+        canvas = Canvas(output_file_path, bottomup=0)
 
-        for page in self._pages:
-            page.draw(canvas)
+        if print_progress:
+            from tools import prog_bar_prefix, print_progress_bar
+            prefix = prog_bar_prefix('Drawing to', output_file_path)
+            page_len = len(self._pages)
+
+        if print_progress:
+            for i, page in enumerate(self._pages):
+                print_progress_bar(i, page_len, prefix)
+                page.draw(canvas)
+
+            print_progress_bar(page_len, page_len, prefix)
+        else:
+            for page in self._pages:
+                page.draw(canvas)
 
         canvas.save()
 
@@ -580,6 +595,11 @@ class PDFDocument(PDFComponent):
 
 
 class PDFPage(PDFComponent):
+    __slots__ = PDFComponent.__slots__[:]
+    __slots__.extend(['_num_rows', '_num_cols', '_page_num',
+        '_fill_rows_first', '_col_rects', '_cols',
+        '_parent_document', '_curr_col_idx'])
+
     def __init__(self):
         super().__init__()
         self._num_rows = 1
@@ -684,6 +704,8 @@ class PDFPage(PDFComponent):
         return f'{self.__class__.__name__}(columns={self._cols})'
 
 class PDFColumn(PDFComponent):
+    __slots__ = PDFComponent.__slots__[:]
+    __slots__.extend(['_paragraph_lines', '_paragraphs', '_height_used', '_parent_page'])
     def __init__(self):
         super().__init__()
         self._paragraph_lines = []
@@ -757,6 +779,10 @@ class PDFColumn(PDFComponent):
         return f'{self.__class__.__name__}(paragraph_lines={self._paragraph_lines})'
 
 class PDFParagraph(PDFComponent):
+    __slots__ = PDFComponent.__slots__[:]
+    __slots__.extend(['_space_between_lines', '_paragraph_lines',
+        '_parent_document', '_parent_columns'])
+
     def __init__(self):
         super().__init__()
         self._space_between_lines = 0
@@ -795,6 +821,9 @@ class PDFParagraph(PDFComponent):
         return f'{self.__class__.__name__}(paragraph_lines={self._paragraph_lines})'
 
 class PDFParagraphLine(PDFComponent):
+    __slots__ = PDFComponent.__slots__[:]
+    __slots__.extend(['_pdfwords', '_parent_paragraph', '_parent_column'])
+
     def __init__(self):
         super().__init__()
         self._pdfwords = []
@@ -898,6 +927,9 @@ class PDFInlineObject(PDFComponent):
     """
     A base class for objects that can be added to a PDFParagraphLine
     """
+    __slots__ = PDFComponent.__slots__[:]
+    __slots__.extend(['_space_before', '_space_after'])
+
     def __init__(self):
         super().__init__()
         self._space_before = True
@@ -915,6 +947,9 @@ class PDFInlineObject(PDFComponent):
         return self._space_before
 
 class PDFWord(PDFInlineObject):
+    __slots__ = PDFComponent.__slots__[:]
+    __slots__.extend(['_text', '_parent_paragraph_line'])
+
     def __init__(self):
         super().__init__()
         self._text = ''

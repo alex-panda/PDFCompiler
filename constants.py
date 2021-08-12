@@ -147,11 +147,17 @@ del nl
 # NOTE: Most of these are given as defaults in the print_progress_bar function
 #   located in tools.py and thus are not seen in the rest of the code.
 PB_SUFFIX = 'Complete'
-PB_NUM_DECS = 1 # Number of Decimals in the Percentage
+PB_NAME_SPACE = 20
+PB_PREFIX_SPACE = 10
+PB_NUM_DECS = 2 # Number of Decimals in the Percentage
 PB_LEN = 50 # How long the bar should be
 PB_UNFILL = '-'
 PB_FILL = '='
 PB_NUM_TABS = 1 # Number of tabs before the printed value
+
+
+# What tabs should be when being printed to the command line
+OUT_TAB = ' ' * 6
 
 
 # -----------------------------------------------------------------------------

@@ -6,9 +6,9 @@ from decimal import Decimal
 from placer.templates import PDFDocumentTemplate, PDFDocument, PDFParagraph, PDFParagraphLine, PDFWord, TextInfo
 from shapes import Point, Rectangle
 from markup import MarkupStart, MarkupEnd, Markup
-from constants import ALIGNMENT, TT
+from constants import ALIGNMENT, TT, PB_NUM_TABS
 from toolbox import ToolBox
-from tools import exec_python, eval_python, assert_instance
+from tools import exec_python, eval_python, assert_instance, print_progress_bar, prog_bar_prefix
 
 toolbox = ToolBox() # the toolbox to be given to the people compiling the pdf
 
@@ -17,11 +17,14 @@ class Placer:
     The object that actually places tokens onto the PDF depending on the
         templates it is using.
     """
-    def __init__(self, tokens, globals=None):
+    def __init__(self, tokens, globals=None, file_path=None, print_progress=False):
         self._tokens = tokens
         self._tok_idx = -1
         self._current_tok = None
         self._advance()
+
+        self._progress_bar_prefix = 'Placing' if file_path is None else prog_bar_prefix('Placing', file_path)
+        self._print_progress = print_progress
 
         # The templates that determine the things like color, boldness, size, etc.
         #   of the current word.
@@ -278,7 +281,17 @@ class Placer:
 
         self._new_document()
 
+        tok_len = len(self._tokens)
+        print_progress = self._print_progress
+        prefix = self._progress_bar_prefix
+
+        if print_progress:
+            print_progress_bar(0, tok_len, prefix)
+
         while self._current_tok is not None:
+            if print_progress:
+                print_progress_bar(self._tok_idx, tok_len, prefix)
+
             ct = self._current_tok # Current Token
 
             if isinstance(ct, Token):
@@ -293,6 +306,9 @@ class Placer:
             self._place_curr_paragraph_line()
 
         self.curr_document()._call_end_callbacks()
+
+        if print_progress:
+            print_progress_bar(self._tok_idx, tok_len, prefix)
 
         return self.curr_document()
 
