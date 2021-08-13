@@ -11,7 +11,7 @@ For example:
 \\i{} will \i{italicise any text you put inbetween its two curly brackets.}
 \\u{} will \u{underline any text you put inbetween its two curly brackets.}
 
-This is the pattern of all commands. You do write a backslash "\\", then the
+This is the pattern of all commands. You write a backslash "\\", then the
 name of the cammand you want to do, and then put the text you want to do it to
 in between the command's curly-brackets "{}".
 
@@ -80,11 +80,11 @@ Some commands have optional arguments. For example:
 
 Here is a full list of the basic commands available in every file by default:
 
-    \\s{text} will strikethrough text.
-
     \\b{text} will bold text.
 
     \\i{text} will italicize text.
+
+    \\s{text} will strikethrough text.
 
     \\u{text}{underline_type=single}{color=black}{span_spaces=true} will
         underline text with the given underline type with the given color.
@@ -108,48 +108,51 @@ Here is a full list of the basic commands available in every file by default:
     \\align{alignment}{text} will align the text the given way. The available
         alignments are "left", "right", "center", and "justify".
 
-    \\newcommand{command_name}{comma, seperated, list, of, arguments, coma=seperated,
-        list=of, some=key, word=arguments}
-        {code/text to run at start of command}{code/text to run at end of command}
-        will allow you to define a new command of the given name, with the given
-        arguments and key-word arguments, which will run the given code when
-        the command is run. If you do not understand what any of that means,
-        look at the "defining_commands.pdfo" file of the tutorial. It has a
-        far longer and more digestible explenation. By the way, this command
-        will throw an error if the command_name is already in use. That is
-        why it is called "new" command.
-
-    \\renewcommand is the same as newcommand (and with the same arguments and
-        keyword arguments) but throws an error if the command_name has NOT
-        already been defined\is not already in use.
-
 For the following commands, the file path should be written
     using only forward slashes, regardless of what operating system you are
     using (i.e. write "path/to/file" not "path\to\file", even if you are
     on windows). The file path can be relative to the file being run or
     can be an absolute path.
 
-    \\insert{file path} will run the file specified by file path an the point
+    \\insert{path/to/file} will run the file specified by file path at the point
         in the file when this command is run. It will run the file completely,
-        inserting its text into the PDF at that point in the PDF.
+        inserting its text into the PDF at that point in the PDF and importing
+        all if its commands.
 
-    \\import_from{file path}{command_name, another_command_name,
-        command_name as new_name_for_command}
-        will import commands, denoted by a comma seperated list, from the
-        file specified by file path. You can import a command under another
-        name if you write an entry as command_name "as" new_name_for_command.
-        By writing just "*" you can import all commands from the file. This
-        runs the file, but does NOT put any of the text from it in the PDF.
+    \\import{path/to/file} will import the file at the given file path.
+        Importing a file does NOT insert the text of the file, it just imports
+        all the commands that are globally defined in the imported file. If
+        you want to insert the text and import the commands then you need
+        to use the \\insert command.
+
+    \\std_import{import_file_name} will import from the standard imports. For
+        example, the "book.pdfo" import is a standard format and could be
+        imported using this.
+
+    \\near_import{path/to/file} will first check path/to/file for a file and
+        then, if a file could not be found, it checks the standard directory
+        for the file. For example, if you want to use the standard import
+        "book.pdfo" but want to be able to make your own custom format file
+        you can give "./path/to/book.pdfo" and it will first check that
+        file path for "book.pdfo", importing that file if found, and then
+        it will check the standard imports for "book". This is useful
+        if you want to be able to provide your own custom format but don't
+        want to have everything to break just because you sent the file
+        to your friend without your custom formating.
+
+    \\far_import{path/to/file} the opposite of close_import, this command will
+        check the standard imports first and then check path/to/file for the
+        import file
 
 Named Units:
     inch, cm, mm, pica
 
 Named Page Sizes:
-        A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10,
-        B0, B1, B2, B3, B4, B5, B6, B7, B8, B9, B10,
-        C0, C1, C2, C3, C4, C5, C6, C7, C8, C9, C10,
-        LETTER, LEGAL, ELEVENSEVENTEEN, JUNIOR_LEGAL, HALF_LETTER,
-        GOV_LETTER, GOV_LEGAL, TABLOID, LEDGER
+    A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10,
+    B0, B1, B2, B3, B4, B5, B6, B7, B8, B9, B10,
+    C0, C1, C2, C3, C4, C5, C6, C7, C8, C9, C10,
+    LETTER, LEGAL, ELEVENSEVENTEEN, JUNIOR_LEGAL, HALF_LETTER,
+    GOV_LETTER, GOV_LEGAL, TABLOID, LEDGER
 
 Named Colors:
     transparent, aliceblue, antiquewhite, aqua, aquamarine, azure, beige, bisque,

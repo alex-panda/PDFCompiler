@@ -87,6 +87,11 @@ END_LINE_CHARS = ('\r\n', '\r', '\n', '\f') # White space that would start a new
 NON_END_LINE_CHARS = (' ', '\t', '\v') # White space that would not start a new line/paragraph
 WHITE_SPACE_CHARS = (' ', '\t', '\n', '\r', '\f', '\v') # all white space
 
+# The relative path to the standard library
+STD_LIB_FILE_NAME = '__std_lib__'
+STD_DIR = './__std__/'
+STD_FILE_ENDING = 'pdfo'
+
 def nl(*args):
     """
     Adds newlines to the given terms and returns them. This is so that they will
@@ -111,26 +116,26 @@ class TT_M:
     # PYTHON CODE IDENTIFIERS
     #   FIRST PASS PYTHON
     #       EXEC PYTHON
-    ONE_LINE_PYTH_1PASS_EXEC_START =    ['\\1>']
+    ONE_LINE_PYTH_1PASS_EXEC_START =    ['\\>', '\\1>']
     ONE_LINE_PYTH_1PASS_EXEC_END =      [*nl('<\\', '<1\\'), *END_LINE_CHARS]
-    MULTI_LINE_PYTH_1PASS_EXEC_START =  ['\\1->']
+    MULTI_LINE_PYTH_1PASS_EXEC_START =  ['\\->', '\\1->']
     MULTI_LINE_PYTH_1PASS_EXEC_END =    [*nl('<-\\', '<-1\\')]
 
     #       EVAL PYTHON
-    ONE_LINE_PYTH_1PASS_EVAL_START =    ['\\1?>']
+    ONE_LINE_PYTH_1PASS_EVAL_START =    ['\\?>', '\\1?>']
     ONE_LINE_PYTH_1PASS_EVAL_END =      [*nl('<\\', '<?\\', '<?1\\'), *END_LINE_CHARS]
     MULTI_LINE_PYTH_1PASS_EVAL_START =  ['\\1?->']
     MULTI_LINE_PYTH_1PASS_EVAL_END =    [*nl('<-\\', '<-?1\\')]
 
     #   SECOND PASS PYTHON
     #       EXEC PYTHON
-    ONE_LINE_PYTH_2PASS_EXEC_START =    ['\\>', '\\2>']
+    ONE_LINE_PYTH_2PASS_EXEC_START =    ['\\2>']
     ONE_LINE_PYTH_2PASS_EXEC_END =      [*nl('<\\', '<2\\'), *END_LINE_CHARS]
-    MULTI_LINE_PYTH_2PASS_EXEC_START =  ['\\->', '\\2->']
+    MULTI_LINE_PYTH_2PASS_EXEC_START =  ['\\2->']
     MULTI_LINE_PYTH_2PASS_EXEC_END =    [*nl('<-2\\')]
 
     #       EVAL PYTHON
-    ONE_LINE_PYTH_2PASS_EVAL_START =    ['\\?>', '\\2?>']
+    ONE_LINE_PYTH_2PASS_EVAL_START =    ['\\2?>']
     ONE_LINE_PYTH_2PASS_EVAL_END =      [*nl('<\\', '<?\\', '<?2\\'), *END_LINE_CHARS]
     MULTI_LINE_PYTH_2PASS_EVAL_START =  ['\\?->']
     MULTI_LINE_PYTH_2PASS_EVAL_END =    [*nl('<-?\\')]
@@ -149,8 +154,8 @@ del nl
 PB_SUFFIX = 'Complete'
 PB_NAME_SPACE = 20
 PB_PREFIX_SPACE = 10
-PB_NUM_DECS = 2 # Number of Decimals in the Percentage
-PB_LEN = 50 # How long the bar should be
+PB_NUM_DECS = 1 # Number of Decimals in the Percentage
+PB_LEN = 30 # How long the bar should be
 PB_UNFILL = '-'
 PB_FILL = '='
 PB_NUM_TABS = 1 # Number of tabs before the printed value

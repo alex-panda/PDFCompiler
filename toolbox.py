@@ -1,11 +1,15 @@
 """
 A module providing a ToolBox for the users of the compiler to use.
 """
+import os
 from collections import namedtuple as named_tuple
 from decimal import Decimal
 
+from reportlab import rl_config
 from reportlab.lib.units import inch, cm, mm, pica, toLength
-from reportlab.lib import units, colors, pagesizes as pagesizes
+from reportlab.lib import units, colors, pagesizes
+from reportlab.pdfbase.pdfmetrics import getFont, getRegisteredFontNames, standardFonts, registerFont
+from reportlab.pdfbase.ttfonts import TTFont
 
 from tools import assure_decimal, trimmed
 from constants import ALIGNMENT, SCRIPT, STRIKE_THROUGH, UNDERLINE
@@ -95,43 +99,43 @@ class ToolBox:
     # Methods that allow a standard way for users to get constants from commands
 
     @staticmethod
-    def color_for_str(color_name_str):
+    def color_from_str(color_name_str):
         trimmed = trimmed(color_name_str)
         lowered = trimmed.lower()
 
         if lowered in _colors_dict:
             return _colors_dict[lowered]
 
-        raise Exception(f'{color_name_str} is not a valid name for a color.')
+        raise AssertionError(f'{color_name_str} is not a valid name for a color.')
 
     @staticmethod
-    def page_size_for_str(page_size_str):
+    def page_size_from_str(page_size_str):
         return _page_sizes_dict[trimmed(page_size_str).upper()]
-        raise Exception(f'{page_size_str} is not a valid page size.')
+        raise AssertionError(f'{page_size_str} is not a valid page size.')
 
     @staticmethod
-    def unit_for_str(unit_name_str):
+    def unit_from_str(unit_name_str):
         return _units_dict[trimmed(unit_name_str).lower()]
-        raise Exception(f'{unit_name_str} is not a valid unit.')
+        raise AssertionError(f'{unit_name_str} is not a valid unit.')
 
     @staticmethod
-    def alignment_for_str(alignment_name):
+    def alignment_from_str(alignment_name):
         return ALIGNMENT.validate(alignment_name)
 
     @staticmethod
-    def script_for_str(script_name):
+    def script_from_str(script_name):
         return SCRIPT.validate(script_name)
 
     @staticmethod
-    def strike_through_for_str(script_name):
+    def strike_through_from_str(script_name):
         return STRIKE_THROUGH.validate(script_name)
 
     @staticmethod
-    def underline_for_str(script_name):
+    def underline_from_str(script_name):
         return UNDERLINE.validate(script_name)
 
     @staticmethod
-    def length_for_str(length_as_str):
+    def length_from_str(length_as_str):
         """
         Takes a length as a string, such as '4pica' or '4mm' and converts it
             into a Decimal of the specified size.
@@ -140,6 +144,31 @@ class ToolBox:
 
     # ---------------------------------
     # Other Helpful Methods
+
+    @staticmethod
+    def validate_font(font_name, return_false=False):
+        """
+        Raises an assertion error by default and returns False if return_false is True
+            if the given font_name is not available/has not yet been registered.
+
+        Returns True if the font is available.
+        """
+        getFont(font_name)
+
+    @staticmethod
+    def standard_fonts():
+        return standardFonts()
+
+    @staticmethod
+    def registered_fonts():
+        """
+        Returns a list of all registered fonts i.e. every font name that can be
+            currently used. If you want more, then you need to register the new
+            font.
+
+        returns: a list of strings representing font names
+        """
+        return getRegisteredFontNames()
 
     @staticmethod
     def assure_landscape(page_size):

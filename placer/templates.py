@@ -5,6 +5,7 @@ from reportlab.pdfgen.canvas import Canvas
 from reportlab.lib.colors import HexColor, Color, CMYKColor
 
 from tools import assure_decimal, assert_instance, assert_subclass, draw_str
+from tools import prog_bar_prefix, print_progress_bar, calc_prog_bar_refresh_rate
 from constants import TT, ALIGNMENT, ALIGNMENT, SCRIPT, STRIKE_THROUGH, UNDERLINE
 
 from shapes import Point, Rectangle
@@ -559,13 +560,14 @@ class PDFDocument(PDFComponent):
         canvas = Canvas(output_file_path, bottomup=0)
 
         if print_progress:
-            from tools import prog_bar_prefix, print_progress_bar
-            prefix = prog_bar_prefix('Drawing to', output_file_path)
             page_len = len(self._pages)
+            refresh = calc_prog_bar_refresh_rate(page_len)
+            prefix = prog_bar_prefix('Drawing to', output_file_path)
 
         if print_progress:
             for i, page in enumerate(self._pages):
-                print_progress_bar(i, page_len, prefix)
+                if (i % refresh) == 0:
+                    print_progress_bar(i, page_len, prefix)
                 page.draw(canvas)
 
             print_progress_bar(page_len, page_len, prefix)

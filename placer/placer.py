@@ -8,16 +8,14 @@ from shapes import Point, Rectangle
 from markup import MarkupStart, MarkupEnd, Markup
 from constants import ALIGNMENT, TT, PB_NUM_TABS
 from toolbox import ToolBox
-from tools import exec_python, eval_python, assert_instance, print_progress_bar, prog_bar_prefix
-
-toolbox = ToolBox() # the toolbox to be given to the people compiling the pdf
+from tools import exec_python, eval_python, assert_instance, print_progress_bar, prog_bar_prefix, calc_prog_bar_refresh_rate
 
 class Placer:
     """
     The object that actually places tokens onto the PDF depending on the
         templates it is using.
     """
-    def __init__(self, tokens, globals=None, file_path=None, print_progress=False):
+    def __init__(self, tokens, toolbox=None, globals=None, file_path=None, print_progress=False):
         self._tokens = tokens
         self._tok_idx = -1
         self._current_tok = None
@@ -40,11 +38,16 @@ class Placer:
 
         self._last_placed_paragraph_line = None
 
-        if globals is None:
-            self._globals = {'placer':self}
+        if toolbox is None:
+            toolbox = ToolBox(None)
+
+        if globals is not None:
+            self._globals = globals
         else:
-            self._globals = copy.deepcopy(globals)
-            self._globals['placer'] = self
+            self._globals = {}
+
+        globals_to_add = {'placer':self, 'toolbox':toolbox}
+        self._globals.update(globals_to_add)
 
     # ------------------------
     # Public Methods
@@ -281,16 +284,20 @@ class Placer:
 
         self._new_document()
 
-        tok_len = len(self._tokens)
         print_progress = self._print_progress
-        prefix = self._progress_bar_prefix
 
         if print_progress:
+            tok_len = len(self._tokens)
+            prefix = self._progress_bar_prefix
+            r = calc_prog_bar_refresh_rate(tok_len)
             print_progress_bar(0, tok_len, prefix)
 
         while self._current_tok is not None:
+
             if print_progress:
-                print_progress_bar(self._tok_idx, tok_len, prefix)
+                i = self._tok_idx
+                if i % r == 0:
+                    print_progress_bar(i, tok_len, prefix)
 
             ct = self._current_tok # Current Token
 

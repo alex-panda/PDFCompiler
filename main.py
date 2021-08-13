@@ -1,5 +1,5 @@
 from compiler import Compiler, Error
-from constants import OUT_TAB
+from constants import OUT_TAB, STD_DIR
 import os
 
 def main(input_file_path, output_file_path=None, print_progress_bars=False):
@@ -24,7 +24,7 @@ def main(input_file_path, output_file_path=None, print_progress_bars=False):
         output_file_path = '.'.join(output_file_path)
 
     try:
-        c = Compiler(input_file_path, print_progress_bars)
+        c = Compiler(input_file_path, os.path.abspath(STD_DIR), print_progress_bars)
         c.compile_and_draw_pdf(output_file_path)
     except Error as e:
         return e
@@ -41,28 +41,30 @@ if __name__ == "__main__":
             help='The path to the output file you want. Without this, the output file is just the input file path with the ending changed to .pdf')
     #p.add_argument('-f', '--verbosity', type=int,
             #help='The level of logging you want.')
-    #p.add_argument('--continous', action="store_true"
-            #help='Continuouly compile file every time it is resaved.')
-    p.add_argument('-np', '--no_progress', action="store_false",
+    #p.add_argument('-c', '--continous', action="store_true",
+            #help='Continuouly compile the file every time it is resaved.')
+    p.add_argument('-np', '--no_progress', action="store_true",
             help='Gets rid of the progress bars that are normally shown whenever you compile the PDF.')
     args = p.parse_args()
 
-    #print('Beginning File Compilition!')
+    input_file_path = os.path.abspath(os.path.expandvars(os.path.expanduser(args.input_file_path)))
 
-    input_file_path = os.path.abspath(args.input_file_path)
+    if not os.path.exists(input_file_path):
+        raise AssertionError(f'The given path does not exist: {input_file_path}')
+
+    if not os.path.isfile(input_file_path):
+        raise AssertionError(f'The given path is not a path to a file that exists: {input_file_path}')
 
     from time import time
 
     start_time = time()
 
-    print(f'\nCompiling file at\n{OUT_TAB}{input_file_path}', end='')
+    print(f'\nCompiling file at\n{OUT_TAB}{input_file_path}')
 
     if args.no_progress:
-        print('\n', end='')
-    else:
-        print(f'\n{OUT_TAB}.\n{OUT_TAB}.\n{OUT_TAB}.')
+        print(f'{OUT_TAB}.\n{OUT_TAB}.\n{OUT_TAB}.')
 
-    res = main(args.input_file_path, args.output_file_path, args.no_progress)
+    res = main(args.input_file_path, args.output_file_path, not args.no_progress)
 
     if not isinstance(res, str):
         print('\n\nAn Error Occured\n', end='')

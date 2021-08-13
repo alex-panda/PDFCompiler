@@ -2,7 +2,7 @@
 This is the main file that holds the Tokenizer, Parser, and Interpreter
     that actually compile the PDF.
 """
-import os
+import os.path as path
 import re
 import copy as _copy
 from decimal import Decimal
@@ -11,10 +11,11 @@ from reportlab.lib.units import inch, cm, mm, pica, toLength
 from reportlab.lib import units, colors, pagesizes as pagesizes
 
 from placer.placer import Placer
-from constants import CMND_CHARS, END_LINE_CHARS, ALIGNMENT, TT, TT_M, WHITE_SPACE_CHARS, NON_END_LINE_CHARS, PB_NUM_TABS, PB_NAME_SPACE
-from tools import assure_decimal, is_escaped, is_escaping, exec_python, eval_python, string_with_arrows, trimmed, print_progress_bar, prog_bar_prefix
+from constants import CMND_CHARS, END_LINE_CHARS, ALIGNMENT, TT, TT_M, WHITE_SPACE_CHARS, NON_END_LINE_CHARS, PB_NUM_TABS, PB_NAME_SPACE, STD_FILE_ENDING, STD_LIB_FILE_NAME
+from tools import assure_decimal, is_escaped, is_escaping, exec_python, eval_python, string_with_arrows, trimmed, print_progress_bar, prog_bar_prefix, calc_prog_bar_refresh_rate
 from marked_up_text import MarkedUpText
 from markup import Markup, MarkupStart, MarkupEnd
+from toolbox import ToolBox
 
 # -----------------------------------------------------------------------------
 # Errors That Can Occur While Compiling
@@ -117,12 +118,14 @@ class Position:
 # File Class
 
 class File:
-    __slots__ = ['file_path', 'raw_text', 'tokens', 'ast']
+    __slots__ = ['file_path', 'raw_text', 'tokens', 'ast', 'being_imported']
     def __init__(self, file_path):
         self.file_path = file_path # Path to file
         self.raw_text = None
         self.tokens = None # The tokens that make up the File once it has been tokenized
         self.ast = None
+        self.being_imported = False
+
 
 # -----------------------------------------------------------------------------
 # Token Class
@@ -340,22 +343,24 @@ class Tokenizer:
         if print_progress:
             text_len = len(self._text)
             prefix = prog_bar_prefix('Tokenizing', self._pos.file_path)
+            refresh = calc_prog_bar_refresh_rate(text_len)
             print_progress_bar(0, text_len, prefix)
 
         # By default, all text is plain text until something says otherwise
         while self._current_char is not None:
 
-            if print_progress:
-                print_progress_bar(self._pos.idx, text_len, prefix)
+            i = self._pos.idx
 
+            if print_progress and (i % refresh) == 0:
+                print_progress_bar(i, text_len, prefix)
 
             cc = self._current_char
 
             t = None
 
-            if is_escaped(self._pos.idx, self._text, what_can_be_escaped):
+            if is_escaped(i, self._text, what_can_be_escaped):
                 self._plain_text_char()
-            elif is_escaping(self._pos.idx, self._text, what_can_be_escaped):
+            elif is_escaping(i, self._text, what_can_be_escaped):
                 self._advance() # Just advance because it is just escaping something else
             elif cc in END_LINE_CHARS:
                 self._try_word_token()
@@ -992,6 +997,7 @@ class Parser:
         self._tokens_len = len(tokens)
         file_path = '' if self._tokens_len == 0 else tokens[0].start_pos.file_path
         self._progress_bar_prefix = prog_bar_prefix('Parsing', file_path)
+        self._prog_bar_refresh = calc_prog_bar_refresh_rate(self._tokens_len)
 
         # Things needed to actually parse the tokens
         self._tokens = tokens
@@ -1095,9 +1101,11 @@ class Parser:
         # will eat token if there, otherwise nothing
         self._eat_pb(res)
 
-
-        if self._print_progress_bar:
-            print_progress_bar(self._tok_idx, self._tokens_len, self._progress_bar_prefix)
+        print_prog_bar = self._print_progress_bar
+        if print_prog_bar:
+            refresh = self._prog_bar_refresh
+            toks_len = self._tokens_len
+            prefix = self._progress_bar_prefix
 
         while True:
             # paragraph will be None if the try failed, otherwise it will be the
@@ -1117,8 +1125,11 @@ class Parser:
                 self._reverse(res)
                 break
             else:
-                if self._print_progress_bar:
-                    print_progress_bar(self._tok_idx, self._tokens_len, self._progress_bar_prefix)
+                if print_prog_bar:
+                    i = self._tok_idx
+                    if (i % refresh) == 0:
+                        print_progress_bar(i, toks_len, prefix)
+
                 paragraphs.append(paragraph)
 
         self._eat_pb(res)
@@ -1678,6 +1689,20 @@ class SymbolTable:
         """
         self.symbols.pop(name)
 
+    def import_(self, other_symbol_table):
+        """
+        Imports the symbols of the other symbol table into this one.
+        """
+        self.symbols.update(other_symbol_table.symbols)
+
+    def copy(self):
+        import copy
+
+        new = SymbolTable(None if self.parent is None else self.parent.copy())
+        new.symbols = copy.deepcopy(self.symbols)
+
+        return new
+
 class Context:
     """
     Provides Context for every command/amount of python code that is run. By
@@ -1693,10 +1718,6 @@ class Context:
         self.parent = parent # Parent context if there is one
         self.parent_entry_pos = parent_entry_pos # the position in the code where the context changed (where was the function called)
 
-        # This will be > 0 when they are true and 0 when they are false
-        self._in_cmnd_call = 0
-        self._in_cmnd_def = 0
-
         self._globals = globals
 
         self._locals = locals
@@ -1707,6 +1728,22 @@ class Context:
             self.symbols = SymbolTable(parent.symbols)
         else:
             self.symbols = SymbolTable()
+
+    def copy(self):
+        """
+        Returns a copy of this Context.
+        """
+        import copy
+
+        nc = Context()
+        nc.display_name = self.display_name
+        nc.parent = self.parent
+
+        nc.parent_entry_pos = None if self.parent_entry_pos is None else self.parent_entry_pos.copy()
+        nc._globals = None if self._globals is None else copy.deepcopy(self._globals)
+        nc._locals = None if self._locals is None else copy.deepcopy(self._locals)
+
+        return nc
 
     @property
     def globals(self):
@@ -1739,66 +1776,87 @@ class Interpreter:
         by the Parser and actually runs the corresponding code for the
         node.
     """
-    @staticmethod
-    def visit_root(node, context, flags, print_progress=False):
+    def __init__(self):
+        self._curr_document = None
+        self._curr_context = None
+
+    def insert_tokens(self, tokens):
         """
-        The visit to the root node of a AST.
+        Inserts the given tokens into the current document.
+        """
+        self._curr_document.extend(tokens)
+
+    def import_context(self, context):
+        self._curr_context.import_(context)
+
+    def visit_root(self, node, context, flags, print_progress=False):
+        """
+        The visit to the root node of an AST.
         """
         if print_progress:
+            print()
             print(prog_bar_prefix('Running AST for', context.display_name, align='<', suffix=''))
 
-        result =  Interpreter.visit(node, context, flags)
+        prev_context = self._curr_context
+        self._curr_context = context
+
+        result =  self.visit(node, context, flags)
+
+        self._curr_context = prev_context
 
         if print_progress:
-            print(prog_bar_prefix('Done Running AST for', context.display_name, align='<', suffix=''))
+            print(prog_bar_prefix('Done Running AST for', context.display_name, align='<', suffix='\n'))
 
         return result
 
-    @staticmethod
-    def visit(node, context, flags):
+    def visit(self, node, context, flags):
         method_name = f'_visit_{type(node).__name__}'
-        method = getattr(Interpreter, method_name, Interpreter._no_visit_method)
+        method = getattr(self, method_name, self._no_visit_method)
         return method(node, context, flags)
 
-    @staticmethod
-    def _no_visit_method(node, context, flags):
+    def _no_visit_method(self, node, context, flags):
         raise Exception(f'No _visit_{type(node).__name__} method defined in Interpreter')
 
     # ------------------------------
     # Rule Implementations
 
-    @staticmethod
-    def _visit_FileNode(node, context, flags):
+    def _visit_FileNode(self, node, context, flags):
         res = RunTimeResult()
-        result = res.register(Interpreter.visit(node.document, context, flags))
+        result = res.register(self.visit(node.document, context, flags))
 
         if res.error:
             return res
 
         return res.success(result)
 
-    @staticmethod
-    def _visit_DocumentNode(node, context, flags):
+    def _visit_DocumentNode(self, node, context, flags):
         res = RunTimeResult()
 
-        document = []
+        # Save the current document for later
+        prev_doc = self._curr_document
+
+        # set the current document to a new one
+        document = self._curr_document = []
+
 
         for paragraph in node.paragraphs:
-            write_tokens = res.register(Interpreter.visit(paragraph, context, flags))
+            write_tokens = res.register(self.visit(paragraph, context, flags))
 
             if res.error:
                 return res
             else:
                 document.extend(write_tokens)
 
+        # Set the current document back to what it was previously
+        self._curr_document = prev_doc
+
         return res.success(document)
 
-    @staticmethod
-    def _visit_ParagraphNode(node, context, flags):
+    def _visit_ParagraphNode(self, node, context, flags):
         res = RunTimeResult()
 
         # Visit the writing (could be Plaintext, Python, command def, or a Command call)
-        write_tokens = res.register(Interpreter.visit(node.writing, context, flags))
+        write_tokens = res.register(self.visit(node.writing, context, flags))
 
         if res.error:
             return res
@@ -1811,14 +1869,13 @@ class Interpreter:
 
         return res.success(write_tokens)
 
-    @staticmethod
-    def _visit_WritingNode(node, context, flags):
+    def _visit_WritingNode(self, node, context, flags):
         """
         Visits a WritingNode. If successful, this method will return a string of
             what the ParagraphNode is supposed to write.
         """
         res = RunTimeResult()
-        write_tokens = res.register(Interpreter.visit(node.writing, context, flags))
+        write_tokens = res.register(self.visit(node.writing, context, flags))
 
         # Error Handling
         if res.error:
@@ -1826,8 +1883,7 @@ class Interpreter:
 
         return res.success(write_tokens)
 
-    @staticmethod
-    def _visit_PythonNode(node, context, flags):
+    def _visit_PythonNode(self, node, context, flags):
         res = RunTimeResult()
         python_token = node.python
         tt = python_token.type
@@ -1861,8 +1917,7 @@ class Interpreter:
 
         return res.success(python_result)
 
-    @staticmethod
-    def _visit_CommandDefNode(node, context, flags):
+    def _visit_CommandDefNode(self, node, context, flags):
         res = RunTimeResult()
 
         cmnd_name = node.cmnd_name.value
@@ -1878,8 +1933,7 @@ class Interpreter:
 
         return res.success([])
 
-    @staticmethod
-    def _visit_CommandCallNode(node, context, flags):
+    def _visit_CommandCallNode(self, node, context, flags):
         res = RunTimeResult()
 
         tokens = []
@@ -1893,7 +1947,7 @@ class Interpreter:
                 context
                 ))
         elif isinstance(command_to_call, TextGroupNode):
-            result = res.register(Interpreter.visit(command_to_call, context, flags))
+            result = res.register(self.visit(command_to_call, context, flags))
 
             if res.error: return res
 
@@ -1942,7 +1996,7 @@ class Interpreter:
             py_locals = {}
 
             for key, arg in cmnd_args.items():
-                new_tokens = res.register(Interpreter.visit(arg, context, flags))
+                new_tokens = res.register(self.visit(arg, context, flags))
                 new_tokens = Tokenizer.marked_up_text_for_tokens(new_tokens)
 
                 if res.error:
@@ -1961,42 +2015,99 @@ class Interpreter:
                 else:
                     new_context.symbols.set(key, value)
 
+            prev_context = self._curr_context
+            self._curr_context = new_context
+
             # actually run the command now that its variables have been added to the context
-            result = res.register(Interpreter.visit(command_to_call.text_group, new_context, flags))
+            result = res.register(self.visit(command_to_call.text_group, new_context, flags))
             if res.error: return res
 
             if result:
                 tokens.extend(result)
 
+            self._curr_context = prev_context
+
         return res.success(tokens)
 
-    @staticmethod
-    def _visit_TextGroupNode(node, context, flags):
+    def _visit_TextGroupNode(self, node, context, flags):
         res = RunTimeResult()
-        doc_tokens = res.register(Interpreter.visit(node.document, context, flags))
+        doc_tokens = res.register(self.visit(node.document, context, flags))
 
         if res.error:
             return res
 
         return res.success(doc_tokens)
 
-    @staticmethod
-    def _visit_PlainTextNode(node, context, flags):
+    def _visit_PlainTextNode(self, node, context, flags):
         res = RunTimeResult()
         return res.success(node.plain_text)
 
 # -----------------------------------------------------------------------------
 # Compiler Class
 
+class CompilerProxy:
+    """
+    The actual object that is actually given to files being compiled named 'compiler'.
+        The reason this object is given and not the actual compiler because
+        this makes it clearer what methods are actually meant to be used in
+        the files being compiled.
+    """
+    def __init__(self, compiler):
+        self._compiler = compiler
+
+    # ---------------------------------
+    # Methods for Directory/File Finding
+
+    def main_file_path(self):
+        return self._compiler.main_file_path()
+
+    def main_file_dir(self):
+        return self._compiler.main_file_dir()
+
+    def curr_file_path(self):
+        return self._compiler.curr_file_path()
+
+    def curr_file_dir(self):
+        return self._compiler.curr_file_dir()
+
+    # ---------------------------------
+    # Methods for importing/inserting files
+
+    def insert_file(self, file_path):
+        self._compiler.insert_file(file_path)
+
+    def insert_file_text_only(self, file_path):
+        self._compiler.insert_text_only(file_path)
+
+    def import_file(self, file_path):
+        self._compiler.import_file(file_path)
+
+    def std_import_file(self, file_path):
+        self._compiler.std_import_file(file_path)
+
+    def near_import_file(self, file_path):
+        self._compiler.near_import_file(file_path)
+
+    def far_import_file(self, file_path):
+        self._compiler.far_import_file(file_path)
+
+
 class Compiler:
-    def __init__(self, input_file_path, print_progess_bars=False):
+    """
+    This object orchestrates the compilation of plaintext files into PDFs
+    """
+    def __init__(self, input_file_path, path_to_std_dir, print_progess_bars=False):
         self._commands = {}
         self._files_by_path = {}
+        assert path.isfile(input_file_path), f'The given path does not exist: {input_file_path}'
         self._input_file_path = input_file_path
+        self._input_file_dir = path.dirname(input_file_path)
+        self._std_dir_path = path_to_std_dir
         self._print_progress_bars = print_progess_bars
 
-        self._globals = self._fresh_globals()
-        self._global_symbol_table = self._fresh_global_symbol_table()
+        self._curr_interpreter = Interpreter()
+        self._toolbox = ToolBox()
+        self._compiler_poxy = CompilerProxy(self)
 
     # -------------------------------------------------------------------------
     # Main Methods
@@ -2006,8 +2117,13 @@ class Compiler:
         Compiles the PDF and returns the PDFDocument that can be used to draw
             the PDF multiple times to different files.
         """
-        tokens = self._run_file(self._input_file_path)
-        return Placer(tokens, self._globals, self._input_file_path, self._print_progress_bars).create_pdf()
+        # Import the standard library by running the file and then giving the
+        #   context to the main run
+        tokens, context = self._run_file(self._path_to_std(STD_LIB_FILE_NAME), print_progress=True)
+
+        # Now run the actual file
+        tokens, context = self._run_file(self._input_file_path, context, print_progress=self._print_progress_bars)
+        return Placer(tokens, self._toolbox, context.globals, self._input_file_path, self._print_progress_bars).create_pdf()
 
     def compile_and_draw_pdf(self, output_pdf_path):
         """
@@ -2024,7 +2140,8 @@ class Compiler:
         """
         new_globals = {'__name__': __name__, '__doc__': None, '__package__': None,
                 '__loader__': __loader__, '__spec__': None, '__annotations__': {},
-                '__builtins__': _copy.deepcopy(globals()['__builtins__'])}
+                '__builtins__': _copy.deepcopy(globals()['__builtins__']),
+                'compiler':self._compiler_poxy}
 
         # Now remove any problematic builtins from the globals
         rem_builtins = []
@@ -2033,28 +2150,15 @@ class Compiler:
 
         return new_globals
 
-    def _fresh_global_symbol_table(self):
-        return SymbolTable()
-
-    def _run_file(self, file_path):
-        """
-        Runs a file, importing first if need be.
-        """
-        file = self._import_file(file_path)
-        result = Interpreter.visit_root(file.ast, Context(file.file_path, globals=self._globals, symbol_table=self._global_symbol_table), InterpreterFlags(), self._print_progress_bars)
-
-        if result.error:
-            raise result.error
-
-        return result.value # return the tokens for the file.
-
-    def _import_file(self, file_path):
+    def _compiler_import_file(self, file_path, print_progress=False):
         """
         Imports a file, tokenizing it and determining its Abstract Syntax
             Tree (AST) before returning it. To run the file, the AST
             must be run by the Interpreter.
         """
-        file_path = os.path.abspath(file_path)
+        assert path.isfile(file_path), f'Tried to import something that is not a file and does not exist: {file_path}'
+        file_path = path.abspath(file_path)
+        assert path.isfile(file_path), f'Tried to import something that is not a file and does not exist: {file_path}'
 
         # If file already imported, just return the file
         if file_path in self._files_by_path:
@@ -2063,43 +2167,30 @@ class Compiler:
         file = File(file_path)
         self._files_by_path[file_path] = file
 
-        dec_error = False
         try:
             with open(file_path) as f:
                 file.raw_text = f.read() # Raw text that the file contains
-            dec_error = False
         except:
-            dec_error = True
-
-        if dec_error:
             try:
                 with open(file_path, encoding='utf-8') as f:
                     file.raw_text = f.read() # Raw text that the file contains
-                dec_error = False
 
             except:
-                dec_error = True
-
-        if dec_error:
-            try:
-                with open(file_path, encoding='utf-16') as f:
-                    file.raw_text = f.read() # Raw text that the file contains
-                dec_error = False
-            except:
-                dec_error = True
-
-        if dec_error:
-            try:
-                with open(file_path, encoding='utf-32') as f:
-                    file.raw_text = f.read() # Raw text that the file contains
-            except:
-                raise AssertionError('Could not decode the given file as utf-8, utf-16, or utf-32.')
+                try:
+                    with open(file_path, encoding='utf-16') as f:
+                        file.raw_text = f.read() # Raw text that the file contains
+                except:
+                    try:
+                        with open(file_path, encoding='utf-32') as f:
+                            file.raw_text = f.read() # Raw text that the file contains
+                    except:
+                        raise AssertionError('Could not decode the given file as utf-8, utf-16, or utf-32.')
 
 
-        file.tokens = Tokenizer(file.file_path, file.raw_text, print_progress_bar=self._print_progress_bars).tokenize()
+        file.tokens = Tokenizer(file.file_path, file.raw_text, print_progress_bar=print_progress).tokenize()
 
         # Returns a ParseResult, so need to see if any errors. If no Errors, then set file.ast to the actual abstract syntax tree
-        file.ast = Parser(file.tokens, print_progress_bar=self._print_progress_bars).parse()
+        file.ast = Parser(file.tokens, print_progress_bar=print_progress).parse()
 
         if file.ast.error is not None:
             raise file.ast.error
@@ -2108,15 +2199,181 @@ class Compiler:
 
         return file
 
-    def _ast_for_text(self, text:str, file_name='TextFile'):
+    def _run_file(self, file_path, context=None, import_commands=True, print_progress=False):
         """
-        Tokenizes and creates an AST for a given string, returning the root
-            node of the AST.
+        Runs a file, importing it first if need be, and returns the tokens and
+            context that that the file generates.
         """
-        tokens = Tokenizer(file_name, text).tokenize()
-        ast = Parser(tokens).parse()
+        file = self._compiler_import_file(file_path, print_progress=print_progress)
 
-        return ast
+        if file.being_imported:
+            raise AssertionError(f'This file is already being imported, the fact that it is being imported again means that it is probably a circular import: {file_path}')
+        else:
+            file.being_imported = True
+
+        if context is not None:
+            if not import_commands:
+                context = context.copy()
+
+            old_disp_name = context.display_name
+            context.display_name = file_path
+
+        elif self._curr_interpreter._curr_context is None:
+            # If the current interpreter has no context, then that means that it
+            #    is the global one ready to run the main file, so give it a fresh
+            #    set of globols and a fresh symbol table
+            context = Context(file.file_path, globals=self._fresh_globals(), symbol_table=SymbolTable())
+            old_disp_name = None
+
+        else:
+            # Since the interpreter already has a context, that means that
+            #   it is currently running a file, so the file that we are currently
+            #   running needs the current context
+            if import_commands:
+                # Because the Context is mutable, not making it a copy will mean
+                #   that the context in the current interpreter will be changed,
+                #   thus the commands in the file about to be run will be imported
+                #   to the current context
+                context = self._curr_interpreter._curr_context
+            else:
+                context = self._curr_interpreter._curr_context.copy()
+            old_disp_name = context.display_name
+            context.display_name = file_path
+
+        prior_interpreter = self._curr_interpreter
+        self._curr_interpreter = Interpreter()
+
+        result = self._curr_interpreter.visit_root(file.ast, context, InterpreterFlags(), print_progress)
+
+        if result.error:
+            raise result.error
+
+        self._curr_interpreter = prior_interpreter
+
+        if old_disp_name is not None:
+            context.display_name = old_disp_name
+
+        file.being_imported = False
+
+        return result.value, context # return the tokens for the file as well as the context for it
+
+    def _path_rel_to_file(self, file_path, curr_file=False):
+        """
+        Returns the file path if the given path is relative to the main file
+            being run or the current file being run.
+        """
+        dir = self.curr_file_path_dir() if curr_file else self._main_file_path_dir()
+        file_path = path.abspath(path.join(dir, file_path))
+        assert path.isfile(file_path), f'The given path does not lead to a file or the path does not exist: {file_path}'
+        return file_path
+
+    def _path_to_std(self, file_path):
+        """
+        Returns the file path as a file path to a standard directory file.
+        """
+        # Replace the ending of the file path with the one used by all standard files
+        split_file_path = file_path.split('.')
+
+        if len(split_file_path) > 1:
+            split_file_path.pop()
+
+        split_file_path.append(STD_FILE_ENDING)
+        file_path = '.'.join(split_file_path)
+
+        # check if the file exists
+        file_path = path.abspath(path.join(self._std_dir_path, file_path))
+        assert path.isfile(file_path), f'The given path does not lead to a file or the path does not exist: {file_path}'
+        return file_path
+
+    # --------------------------------
+    # Methods available from CompilerProxy
+
+    def insert_text_only(self, file_path):
+        """
+        Runs the file at the given file path and inserts it into the current
+            document. The commands are not imported but the text is inserted.
+
+        The file path is assumed to be relative to the current file.
+        """
+        result, context = self._run_file(self._path_rel_to_file(file_path), import_commands=False)
+        self._curr_interpreter.insert_tokens(result)
+
+    def insert_file(self, file_path):
+        """
+        Runs the file at the given file path and inserts it into the current
+            document.
+
+        The file path is assumed to be relative to the current file.
+        """
+        result, context = self._run_file(self._path_rel_to_file(file_path), import_commands=True)
+        self._curr_interpreter.insert_tokens(result)
+
+    def import_file(self, file_path):
+        """
+        Runs the file at the given file_path, importing its commands but not
+            inserting its text into the current document.
+
+        This file path is assumed to be relative to the main file being run.
+        """
+        self._run_file(self._path_rel_to_file(file_path), import_commands=True)
+
+    def std_import_file(self, file_path):
+        """
+        Runs the file at the given file_path, importing its commands but not
+            inserting its text into the current document.
+        """
+        self._run_file(self._path_to_std(file_path), import_commands=True)
+
+    def near_import_file(self, file_path):
+        """
+        Runs the file at the given file_path, importing its commands but not
+            inserting its text into the current document.
+        """
+        try:
+            self._import_file(file_path)
+        except AssertionError as e:
+            _file_path, file_name = path.split(file_path)
+            self._std_import_file(file_name)
+
+    def far_import_file(self, file_path):
+        """
+        Runs the file at the given file_path, importing its commands but not
+            inserting its text into the current document.
+        """
+        try:
+            _file_path, file_name = path.split(file_path)
+            self._std_import_file(file_name)
+        except AssertionError as e:
+            try:
+                self._import_file(file_path)
+            except AssertionError as e:
+                raise AssertionError(f'Could not far import file path "{file_path}"')
+
+    def main_file_path(self):
+        """
+        Returns the file path to the main/first/input file that is/was run.
+        """
+        return self._input_file_path
+
+    def main_file_dir(self):
+        """
+        Returns an absolute path to the directory that the main file that is
+            being run is in.
+        """
+        return path.dirname(self._main_file_path())
+
+    def curr_file_path(self):
+        """
+        Returns an absolute path to the current file that is being run.
+        """
+        self._curr_interpreter._curr_context.display_name
+
+    def curr_file_dir(self):
+        """
+        Returns an absolute path to the directory that the current file that is
+            being run is in.
+        """
+        return path.dirname(self._curr_file_path())
 
 class Command:
     """
