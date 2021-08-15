@@ -15,7 +15,7 @@ class Placer:
     The object that actually places tokens onto the PDF depending on the
         templates it is using.
     """
-    def __init__(self, tokens, toolbox=None, globals=None, file_path=None, print_progress=False):
+    def __init__(self, tokens, globals=None, file_path=None, print_progress=False):
         self._tokens = tokens
         self._tok_idx = -1
         self._current_tok = None
@@ -38,15 +38,15 @@ class Placer:
 
         self._last_placed_paragraph_line = None
 
-        if toolbox is None:
-            toolbox = ToolBox(None)
+        # A list of the different objects that have apply_to_canvas methods
+        self._apply_to_canvas_list = []
 
         if globals is not None:
             self._globals = globals
         else:
             self._globals = {}
 
-        globals_to_add = {'placer':self, 'toolbox':toolbox}
+        globals_to_add = {'placer':self}
         self._globals.update(globals_to_add)
 
     # ------------------------
@@ -104,6 +104,9 @@ class Placer:
     def set_default_template(self, new_template):
         assert isinstance(PDFDocumentTemplate), f'The default template must be of type PDFDocumentTemplate, not {new_template}'
         self._default_template = new_template
+
+    def add_apply_to_canvas_obj(self, apply_to_canvas_obj):
+        self._apply_to_canvas_list.append(apply_to_canvas_obj)
 
     # ---------------------------
     # Public Methods for Starting New PDF Elements
@@ -312,12 +315,16 @@ class Placer:
         if cpl is not None and cpl.word_count() > 0:
             self._place_curr_paragraph_line()
 
-        self.curr_document()._call_end_callbacks()
+        cd = self.curr_document()
+        cd._call_end_callbacks()
 
         if print_progress:
             print_progress_bar(self._tok_idx, tok_len, prefix)
 
-        return self.curr_document()
+        for obj in self._apply_to_canvas_list:
+            cd.add_apply_to_canvas_obj(obj)
+
+        return cd
 
     def _advance(self, num=1):
         """Advances to the next character in the text if it should advance."""
@@ -346,7 +353,7 @@ class Placer:
             from compiler import PythonException, Context
 
             raise PythonException(ct.start_pos.copy(), ct.end_pos.copy(),
-                'An error occured while running your Python code.', result, Context())
+                'An error occured while running your Python code.', result, Context('Placer', 'Placer', globals=self._globals))
 
         self._advance()
 
@@ -407,7 +414,11 @@ class Placer:
             self._place_words_on_line(cpl, cpl.text_info().alignment())
 
         self._last_placed_paragraph_line = cpl
+
+        # This adds the total height of the line to the cc.height_used()
+        #   and adds th paragraph line to the column
         cc._add_paragraph_line(cpl)
+
         cpl._set_parent_column(cc)
 
         cp._add_paragraph_line(cpl)
@@ -433,7 +444,7 @@ class Placer:
         align = alignment
 
         # Align the words left
-        offset = ppl.inner_offset().copy()
+        offset = ppl.inner_offset()
         for word in ppl._pdfwords:
             word.set_total_offset(offset)
             offset += Point(word.total_width(), 0)
@@ -477,7 +488,8 @@ class Placer:
         elif align != ALIGNMENT.LEFT:
             raise AssertionError(f'This PDFParagraphLine was had alignment {align}, which is not a valid alignment.')
 
-    def _add_words_to_line(self, pdf_paragraph, pdf_paragraph_line, list_of_pdfwords, column_available_size):
+    @staticmethod
+    def _add_words_to_line(pdf_paragraph, pdf_paragraph_line, list_of_pdfwords, column_available_size):
         """
         Uses current inner_width to place the list of words
 
@@ -506,6 +518,8 @@ class Placer:
         height_used = False
         leftover_words = []
 
+        curr_height = 0
+
         for word in list_of_pdfwords:
             assert_instance(word, PDFWord, 'pdfword', or_none=False)
 
@@ -517,14 +531,17 @@ class Placer:
             #   with it added, remove the word and append it to the leftover
             #   words so that it can be added to the next paragraph line
 
-            ppl._pdfwords.append(word)
+            ppl.append_word(word)
+
+            ppl.calc_word_dims()
+            curr_height = ppl.curr_height()
 
             if ppl.curr_width() > available_width:
-                leftover_words.append(ppl._pdfwords.pop())
+                leftover_words.append(ppl.pop_word())
                 width_used = True
                 continue
 
-            if ppl.curr_height() > available_height:
+            if curr_height > available_height:
                 # Width was fine but this line's height is too much so need to
                 #   put all these words on the next line (reached bottom of the
                 #   PDFColumn).
@@ -543,14 +560,15 @@ class Placer:
             ppl._pdfwords = []
             return leftover_words, True, width_used
 
-        ppl.set_inner_height(ppl.curr_height())
+        ppl.set_inner_height(curr_height)
 
         return (leftover_words, False, width_used) if len(leftover_words) > 0 else (None, False, width_used)
 
     # ----------
     # Private methods for PDFPage
 
-    def _create_col_rects(self, pdf_page):
+    @staticmethod
+    def _create_col_rects(pdf_page):
         """
         Creates the PDFColumn objects for this PDFPage.
         """
@@ -565,6 +583,8 @@ class Placer:
         col_width = pdf_page.inner_width() / pdf_page._num_cols
         col_height = pdf_page.inner_height() / pdf_page._num_rows
 
+        fill_rows_first = pdf_page.fill_rows_first()
+
         # create the Column objects and place them on the page.
         for i in range(pdf_page._num_rows * pdf_page._num_cols):
             # Create new column
@@ -578,7 +598,7 @@ class Placer:
             pdf_page._col_rects.append(next_col)
 
             # Figure out where the next column will be placed.
-            if pdf_page.fill_rows_first():
+            if fill_rows_first:
                 curr_x_offset += col_width
 
                 # If have reached the last column, start next row

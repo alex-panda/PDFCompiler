@@ -70,6 +70,7 @@ if __name__ == "__main__":
         print('\n\nAn Error Occured\n', end='')
         print(f'{OUT_TAB}A fatal error occured while compiling your PDF. Your PDF was not compiled fully.\n\n', end='')
         print(res.as_string())
+
     else:
         print(f'\n{OUT_TAB}File Compiled Successfully! Compiled File created at:\n{OUT_TAB}{OUT_TAB}{res}')
 

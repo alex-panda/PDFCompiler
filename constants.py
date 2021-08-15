@@ -132,19 +132,19 @@ class TT_M:
     ONE_LINE_PYTH_2PASS_EXEC_START =    ['\\2>']
     ONE_LINE_PYTH_2PASS_EXEC_END =      [*nl('<\\', '<2\\'), *END_LINE_CHARS]
     MULTI_LINE_PYTH_2PASS_EXEC_START =  ['\\2->']
-    MULTI_LINE_PYTH_2PASS_EXEC_END =    [*nl('<-2\\')]
+    MULTI_LINE_PYTH_2PASS_EXEC_END =    [*nl('<-\\', '<-2\\')]
 
     #       EVAL PYTHON
     ONE_LINE_PYTH_2PASS_EVAL_START =    ['\\2?>']
     ONE_LINE_PYTH_2PASS_EVAL_END =      [*nl('<\\', '<?\\', '<?2\\'), *END_LINE_CHARS]
     MULTI_LINE_PYTH_2PASS_EVAL_START =  ['\\?->']
-    MULTI_LINE_PYTH_2PASS_EVAL_END =    [*nl('<-?\\')]
+    MULTI_LINE_PYTH_2PASS_EVAL_END =    [*nl('<-\\', '<-?\\')]
 
     # COMMENT IDENTIFIERS (NOTE: The start of each one must start with a backslash because of where the matching takes place in the tokenizer)
     SINGLE_LINE_COMMENT_START        = ['\\%', '\\#']
     SINGLE_LINE_COMMENT_END          = [*nl('%\\', '#\\'), *END_LINE_CHARS]
     MULTI_LINE_COMMENT_START         = ['\\%->', '\\#->']
-    MULTI_LINE_COMMENT_END           = [*nl('<-%\\', '<-#\\')]
+    MULTI_LINE_COMMENT_END           = [*nl('<-\\', '<-%\\', '<-#\\')]
 
 del nl
 
@@ -162,7 +162,7 @@ PB_NUM_TABS = 1 # Number of tabs before the printed value
 
 
 # What tabs should be when being printed to the command line
-OUT_TAB = ' ' * 6
+OUT_TAB = 6 * ' '
 
 
 # -----------------------------------------------------------------------------
@@ -195,6 +195,6 @@ class UNDERLINE(Enum):
     THICK = 'thick'
     DOTTED = 'dotted'
     DASHED = 'dashed'
-    DOT_DASHED = 'dot dashed'
-    DOT_DOT_DASHED = 'dot dot dashed'
+    DOT_DASHED = 'dot_dashed'
+    DOT_DOT_DASHED = 'dot_dot_dashed'
 

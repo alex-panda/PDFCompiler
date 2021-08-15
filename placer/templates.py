@@ -214,6 +214,7 @@ class TextInfo:
         string += ')'
         return string
 
+
 class HasTextInfo:
     __slots__ = ['_text_info']
     def __init__(self):
@@ -536,10 +537,11 @@ class PDFDocument(PDFComponent):
     The main and top-level class of the PDFHierarchy.
     """
     __slots__ = PDFComponent.__slots__[:]
-    __slots__.extend(['_pages'])
+    __slots__.extend(['_pages', '_apply_to_canvas_list'])
     def __init__(self):
         super().__init__()
         self._pages = []
+        self._apply_to_canvas_list = []
 
     # ----------------------------------------
     # Public methods in API
@@ -550,6 +552,9 @@ class PDFDocument(PDFComponent):
     def pages(self):
         return self._pages
 
+    def add_apply_to_canvas_obj(self, apply_to_canvas_obj):
+        self._apply_to_canvas_list.append(apply_to_canvas_obj)
+
     # This method is mainly for if you are using some sort of special case and
     #   want to draw a compiled PDFDocument to canvas while not using the
     #   Commandline tool
@@ -558,6 +563,9 @@ class PDFDocument(PDFComponent):
         Draws the PDFDocument either to a canvas or to the output_file_path
         """
         canvas = Canvas(output_file_path, bottomup=0)
+
+        for obj in self._apply_to_canvas_list:
+            obj.apply_to_canvas(canvas)
 
         if print_progress:
             page_len = len(self._pages)
@@ -851,6 +859,12 @@ class PDFParagraphLine(PDFComponent):
     def word_count(self):
         return len(self._pdfwords)
 
+    def append_word(self, word):
+        self._pdfwords.append(word)
+
+    def pop_word(self):
+        return self._pdfwords.pop()
+
     def realign(self, new_alignment):
         """
         Realigns this paragraph line to the given alignment.
@@ -862,6 +876,14 @@ class PDFParagraphLine(PDFComponent):
         """
         from placer.placer import Placer
         Placer._place_words_on_line(self, new_alignment)
+
+    def calc_word_dims(self):
+        """
+        Makes all the words in this line recalculate their dimensions. YOU MUST
+            do this before calling either curr_width or curr_height
+        """
+        for word in self._pdfwords:
+            word.calc_dims()
 
     def curr_width(self):
         """
@@ -880,9 +902,6 @@ class PDFParagraphLine(PDFComponent):
             else:
                 word._space_after = False
 
-            if isinstance(word, PDFWord):
-                word.calc_dims()
-
             total_width += word.total_width()
 
         return total_width
@@ -898,8 +917,6 @@ class PDFParagraphLine(PDFComponent):
         height = 0
 
         for word in self._pdfwords:
-            if isinstance(word, PDFWord):
-                word.calc_dims()
 
             word_height = word.total_height()
             word_height += word.total_offset().y() - self.total_offset().y()
@@ -944,6 +961,12 @@ class PDFInlineObject(PDFComponent):
         """
         assert_instance(boolean, bool, 'boolean', or_none=False)
         self._space_before = boolean
+
+    def calc_dims(self):
+        """
+        Calculates the dimensions of the object, if needed
+        """
+        pass
 
     def space_before(self):
         return self._space_before

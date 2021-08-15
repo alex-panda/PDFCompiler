@@ -181,6 +181,9 @@ class Rectangle:
     def clear(self):
         self.set_all(0, 0, 0, 0)
 
+    def __eq__(self, o):
+        return isinstance(o, Rectangle) and self.point() == o.point() and self.size() == o.size()
+
     def __repr__(self):
         return f'{type(self).__name__}({self.point()}, {self.size()})'
 

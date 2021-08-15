@@ -9,18 +9,26 @@ def assure_decimal(val):
 def calc_prog_bar_refresh_rate(total):
     """
     Calculate how often the progress bar should refresh (will do % refresh_rate
-        to figure out whether to print_progress_bar)
+        to figure out whether to print_progress_bar). Basically, printing to
+        the screen is very costly as far as time is concerned so this method
+        calculates the minimum interval of updating the progress bar that will
+        actually make a distance (a number in the percentage decimal number
+        changed)
 
-    total is the total length of what the full
+    total is the total number that the progress bar is iterating to.
     """
+    # Number of times each decimal needs to be updaated
     dec_refresh = (10 ** PB_NUM_DECS)
-    rate = (total // (100 * (1 if dec_refresh <= 0 else dec_refresh))) + 1
-    #print(f'({total} // {(100 * (1 if dec_refresh <= 0 else dec_refresh))}) + 1 = {ret}')
-    return rate
+
+    # The 100 is how how often the 100 part of the 100.00% needs to be updated
+    rate = total // (100 * (1 if dec_refresh <= 0 else dec_refresh))
+
+    # The + 1 is so that it will never be 0, because number % 0 raises an error
+    return rate + 1
 
 def prog_bar_prefix(prefix, file_path, align='^', suffix=':'):
     """
-    Create the correct prefix the each progress bar.
+    Create the correct prefix for each progress bar.
     """
     file_path = file_path.split('\\')[-1].split('/')[-1]
     file_path = file_path if len(file_path) <= PB_NAME_SPACE else file_path[-PB_NAME_SPACE:]
@@ -170,12 +178,11 @@ def exec_python(code, exec_globals:dict, exec_locals:dict=None):
     Executes python code and returns the value stored in 'ret' if it was
         specified as a global variable.
     """
-    if exec_locals is None:
-        exec_locals = {}
-
     try:
         exec(code, exec_globals, exec_locals)
     except Exception as e:
+        import traceback
+        e.exc_trace = traceback.format_exc()
         return e
 
     if 'ret' in exec_globals:
@@ -188,12 +195,11 @@ def eval_python(code:str, eval_globals:dict, eval_locals:dict=None):
     """
     Avaluates Python and returns a string of the output.
     """
-    if eval_locals is None:
-        eval_locals = {}
-
     try:
         res = eval(code, eval_globals, eval_locals)
     except Exception as e:
+        import traceback
+        e.exc_trace = traceback.format_exc()
         return e
 
     return str(res)

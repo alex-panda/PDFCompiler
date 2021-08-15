@@ -12,7 +12,7 @@ from reportlab.lib import units, colors, pagesizes as pagesizes
 
 from placer.placer import Placer
 from constants import CMND_CHARS, END_LINE_CHARS, ALIGNMENT, TT, TT_M, WHITE_SPACE_CHARS, NON_END_LINE_CHARS, PB_NUM_TABS, PB_NAME_SPACE, STD_FILE_ENDING, STD_LIB_FILE_NAME
-from tools import assure_decimal, is_escaped, is_escaping, exec_python, eval_python, string_with_arrows, trimmed, print_progress_bar, prog_bar_prefix, calc_prog_bar_refresh_rate
+from tools import assure_decimal, is_escaped, is_escaping, exec_python, eval_python, string_with_arrows, trimmed, print_progress_bar, prog_bar_prefix, calc_prog_bar_refresh_rate, assert_instance
 from marked_up_text import MarkedUpText
 from markup import Markup, MarkupStart, MarkupEnd
 from toolbox import ToolBox
@@ -54,24 +54,22 @@ class RunTimeError(Error):
         super().__init__(pos_start, pos_end, 'Run-Time Error', details)
         self.context = context
 
-    def as_string(self):
-        return Error.as_string(self)
-
     def generate_traceback(self):
         result = ''
         pos = self.pos_start
         ctx = self.context
 
         while ctx is not None:
-            result = f'  File {pos.file_path}, line {str(pos.ln + 1)}, in {ctx.display_name}\n' + result
-            pos = ctx.parent_entry_pos
+            result = f'  File {pos.file_path}, line {pos.ln + 1}, in {ctx.display_name}\n' + result
+            pos = ctx.entry_pos
             ctx = ctx.parent
 
         return 'Traceback (most recent call last):\n' + result
 
 class PythonException(RunTimeError):
     def __init__(self, pos_start, pos_end, details, python_error, context):
-        self.python_error = python_error
+        import traceback
+        self.python_error = f'{python_error.exc_trace}'
         super().__init__(pos_start, pos_end, details, context)
         self.error_name = 'Python Exception'
 
@@ -81,6 +79,7 @@ class PythonException(RunTimeError):
         string += '\nHere is the Python Exception:\n\n'
         string += f'{self.python_error}'
         return string
+
 
 # -----------------------------------------------------------------------------
 # Position Class
@@ -118,14 +117,21 @@ class Position:
 # File Class
 
 class File:
-    __slots__ = ['file_path', 'raw_text', 'tokens', 'ast', 'being_imported']
+    __slots__ = ['file_path',
+            'raw_text', 'tokens', 'ast',
+            'import_context', 'import_tokens', 'being_run']
     def __init__(self, file_path):
         self.file_path = file_path # Path to file
-        self.raw_text = None
-        self.tokens = None # The tokens that make up the File once it has been tokenized
-        self.ast = None
-        self.being_imported = False
 
+        # Fields set in Compiler._compiler_import_file
+        self.raw_text = None # The raw text that is in the file
+        self.tokens = None # The tokens that make up the File once it has been tokenized
+        self.ast = None # The Abstract Syntax tree from the Tokens being Parsed
+
+        # Fields set by Compiler._import_file
+        self.import_context = None # The context obtained by running the file, can be used to import this file into another file
+        self.import_tokens = None # The tokens to add to the token_document when the file is imported
+        self.being_run = False
 
 # -----------------------------------------------------------------------------
 # Token Class
@@ -298,6 +304,8 @@ class Tokenizer:
             else:
                 Exception(f'{t} was in the list of tokens given to be changed into MarkedUpText, but MarkedUpText can\'t properly denote it.')
 
+        return text
+
     @staticmethod
     def tokens_for_marked_up_text(marked_up_text):
         """
@@ -323,6 +331,8 @@ class Tokenizer:
                     token_list.append(markup)
 
             token_value += char
+
+        return token_list
 
     def tokenize(self, file=True):
         """
@@ -1664,6 +1674,9 @@ class RunTimeResult:
         return self
 
 class SymbolTable:
+    """
+    The symbol table is used to store the commands.
+    """
     def __init__(self, parent=None):
         self.symbols = {}
         self.parent = parent
@@ -1689,11 +1702,24 @@ class SymbolTable:
         """
         self.symbols.pop(name)
 
-    def import_(self, other_symbol_table):
+    def import_(self, other_symbol_table, commands_to_import=None):
         """
         Imports the symbols of the other symbol table into this one.
+
+        If commands_to_import is None, then import every command. Otherwise,
+            only import the commands with the names listed.
         """
-        self.symbols.update(other_symbol_table.symbols)
+        if commands_to_import is None:
+            self.symbols.update(other_symbol_table.symbols)
+
+        else:
+            oth_syms = other_symbol_table.symbols
+
+            for command_name in commands_to_import:
+                if command_name in oth_syms:
+                    self.symbols[command_name] = oth_syms[command_name]
+                else:
+                    raise AssertionError(f'Could not import {command_name}.')
 
     def copy(self):
         import copy
@@ -1709,25 +1735,80 @@ class Context:
         that I mean that the Context determines what commands and variables are
         available and when.
     """
-    def __init__(self, display_name, parent=None, parent_entry_pos=None, globals=None, locals={}, symbol_table=None):
+    def __init__(self, display_name, file_path, parent=None, entry_pos=None, token_document=None, globals=None, locals=None, symbol_table=None):
         """
         Context could be a function if in a function or the entire program
             (global) if not in a function.
         """
-        self.display_name = display_name # the function/program name
+        self.display_name = display_name # the command/program name
+        self.file_path = file_path # the path to the file that the command is in
+        self.entry_pos = entry_pos # the position in the code where the context changed (where the command was called)
         self.parent = parent # Parent context if there is one
-        self.parent_entry_pos = parent_entry_pos # the position in the code where the context changed (where was the function called)
 
-        self._globals = globals
+        # These are the globals and locals used by Python. The SymbolTable is
+        #   used for Commands, not these
+        self._globals = globals # dict or None
 
-        self._locals = locals
+        self._locals = locals # dict or None
 
-        if symbol_table:
-            self.symbols = symbol_table
-        elif parent and parent.symbols:
+        # Make sure that there are globals
+        self.globals() # will throw an error if there are no globals, even in parent contexts
+
+        if symbol_table is not None:
+            assert_instance(symbol_table, SymbolTable, or_none=False)
+            self.symbols = symbol_table # SymbolTable
+        elif parent is not None and parent.symbols is not None:
             self.symbols = SymbolTable(parent.symbols)
         else:
             self.symbols = SymbolTable()
+
+        if token_document is not None:
+            self._token_document = token_document
+        else:
+            self._token_document = []
+
+    def gen_child(self, child_display_name:str, child_entry_pos=None, locals_to_add=None):
+        """
+        Generates a child context i.e. a subcontext such as that which is inside
+            a command.
+
+        locals_to_add are things like the \\test variable below, which should
+            be made available to any Python Code that is inside the command
+
+        \\# Global Context
+        \\hello = (\\test) = {
+            \\# This should have a subcontext where commands can be defined in
+            \\#     here but not mess with those defined in the global context/
+            \\#     any parent context
+            \\test \\# is defined in this child context
+        }
+        \\# \\test is undefined here, in this global context
+        """
+        # Generate the new python locals. Because only one locals dict can be
+        #   passed to an exec or eval method at a time, it must have all the
+        #   references to parent locals in it so that it works as if it could
+        #   look up the locals hierarchy as the SymbolTables do for Commands
+        # In other words, the child Context's locals must be a superset of this
+        #   Context's locals
+        child_lcls = {} if (self._locals is None) else {key:val for key, val in self._locals.items()}
+
+        if locals_to_add:
+            child_lcls.update(locals_to_add)
+
+        parent = self
+
+        # Give the new context a reference to globals so that it does not have
+        #   to walk up a bunch of parents to get it anyway
+        return Context(child_display_name, self.file_path, parent, child_entry_pos, self.token_document(), self.globals(), child_lcls, SymbolTable(self.symbols))
+
+    def import_(self, other_context, tokens_to_import=[], commands_to_import=None):
+        """
+        Takes another context and imports its contents into this one.
+        """
+        self.symbols.import_(other_context.symbols, commands_to_import)
+        self.globals().update(other_context.globals())
+
+        self.token_document().extend(tokens_to_import)
 
     def copy(self):
         """
@@ -1735,28 +1816,32 @@ class Context:
         """
         import copy
 
-        nc = Context()
-        nc.display_name = self.display_name
-        nc.parent = self.parent
+        parent = None if self.parent is None else self.parent.copy()
+        parent_entry_pos = None if self.parent_entry_pos is None else self.parent_entry_pos.copy()
+        _globals = None if self._globals is None else copy.deepcopy(self._globals)
+        _locals = None if self._locals is None else copy.deepcopy(self._locals)
+        symbols = self.symbols.copy()
+        token_doc = self._token_document[:]
 
-        nc.parent_entry_pos = None if self.parent_entry_pos is None else self.parent_entry_pos.copy()
-        nc._globals = None if self._globals is None else copy.deepcopy(self._globals)
-        nc._locals = None if self._locals is None else copy.deepcopy(self._locals)
+        return Context(self.display_name, parent, parent_entry_pos, token_doc, _globals, _locals, symbols)
 
-        return nc
-
-    @property
     def globals(self):
-        if self._globals:
+        if self._globals is not None:
             return self._globals
-        elif self.parent:
-            return self.parent.globals
+        elif self.parent is not None:
+            return self.parent.globals()
         else:
             raise Exception("You did not pass in globals to the Global Context.")
 
-    @property
     def locals(self):
         return self._locals
+
+    def token_document(self):
+        """
+        The list of tokens that should be given to the Placer object to actually
+            make the PDFDocument.
+        """
+        return self._token_document
 
 class InterpreterFlags:
     """
@@ -1777,8 +1862,35 @@ class Interpreter:
         node.
     """
     def __init__(self):
+        self._document_stack = []
         self._curr_document = None
+
+        self._context_stack = []
         self._curr_context = None
+
+        self._curr_pos = None
+
+    def _push_doc(self, document):
+        self._document_stack.append(document)
+        self._curr_document = document
+
+    def _pop_doc(self):
+        doc = self._document_stack.pop()
+        self._curr_document = None if len(self._document_stack) <= 0 else self._document_stack[-1]
+
+    def curr_document(self):
+        return self._curr_document
+
+    def _push_context(self, context):
+        self._context_stack.append(context)
+        self._curr_context = context
+
+    def _pop_context(self):
+        ctx = self._context_stack.pop()
+        self._curr_context = None if len(self._context_stack) <= 0 else self._context_stack[-1]
+
+    def curr_context(self):
+        return self._curr_context
 
     def insert_tokens(self, tokens):
         """
@@ -1786,8 +1898,8 @@ class Interpreter:
         """
         self._curr_document.extend(tokens)
 
-    def import_context(self, context):
-        self._curr_context.import_(context)
+    def curr_pos(self):
+        return self._curr_pos
 
     def visit_root(self, node, context, flags, print_progress=False):
         """
@@ -1832,12 +1944,10 @@ class Interpreter:
     def _visit_DocumentNode(self, node, context, flags):
         res = RunTimeResult()
 
-        # Save the current document for later
-        prev_doc = self._curr_document
+        document = []
 
-        # set the current document to a new one
-        document = self._curr_document = []
-
+        # set the current document to the new one
+        self._push_doc(document)
 
         for paragraph in node.paragraphs:
             write_tokens = res.register(self.visit(paragraph, context, flags))
@@ -1848,7 +1958,7 @@ class Interpreter:
                 document.extend(write_tokens)
 
         # Set the current document back to what it was previously
-        self._curr_document = prev_doc
+        self._pop_doc()
 
         return res.success(document)
 
@@ -1888,16 +1998,15 @@ class Interpreter:
         python_token = node.python
         tt = python_token.type
 
-        # Execute or eval python so that anything in it can be placed on
-        #   the PDF when this node is visited the 2nd time.
+        # Execute or eval python
         if tt == TT.EXEC_PYTH1:
-            python_result = exec_python(python_token.value, context.globals, context.locals)
+            python_result = exec_python(python_token.value, context.globals(), context.locals())
         elif tt == TT.EVAL_PYTH1:
-            python_result = eval_python(python_token.value, context.globals, context.locals)
+            python_result = eval_python(python_token.value, context.globals(), context.locals())
 
         # For second pass python, it needs to be kept until we are actually
-        #   placing the text on the PDF, then the place will be made available
-        #   to the python and can make changes to the PDF
+        #   placing the text on the PDF, then the Placer will be made available
+        #   to the python and the code can make changes to the PDF
         elif tt == TT.EXEC_PYTH2:
             python_result = [python_token]
         elif tt == TT.EVAL_PYTH2:
@@ -1938,12 +2047,12 @@ class Interpreter:
 
         tokens = []
 
-        cmnd_name = node.cmnd_name.value
-        command_to_call = context.symbols.get(cmnd_name)
+        cmnd_name_str = node.cmnd_name.value
+        command_to_call = context.symbols.get(cmnd_name_str)
 
         if command_to_call is None:
             res.failure(RunTimeError(node.cmnd_name.start_pos.copy(), node.cmnd_name.end_pos.copy(),
-                '\\' + f'"{node.cmnd_name.value}" is not defined at this point in the code.',
+                '\\' + f'"{cmnd_name_str}" is not defined at this point in the code.',
                 context
                 ))
         elif isinstance(command_to_call, TextGroupNode):
@@ -1964,68 +2073,77 @@ class Interpreter:
                     f'The {node.cmnd_name.value} command takes {max_args} arguments max, but {num_args_given} where given.',
                     ))
 
-            if num_args_given > max_args:
+            if num_args_given < min_args:
                 res.failure(InvalidSyntaxError(node.cmnd_name.start_pos.copy(), node.cmnd_name.end_pos.copy(),
                     f'The {node.cmnd_name.value} command takes {min_args} arguments minimum, but {num_args_given} where given.',
                     ))
 
             cmnd_args = {}
 
+            # Initialize the args to 0
             for cmnd_arg in command_to_call.params:
                 cmnd_args[cmnd_arg.identifier.value] = 0
 
+            # now replace each KEY-ARGUMENT's value with its default value
             for cmnd_key_param in command_to_call.key_params:
                 cmnd_args[cmnd_key_param.key.value] = cmnd_key_param.text_group
 
+            # now replace each of the POSITIONAL-ARGUMENT's value with its positional value
             for param, arg in zip(command_to_call.params, node.cmnd_tex_args):
                 # params are CommandParamNode
                 cmnd_args[cmnd_arg.identifier.value] = arg.text_group
 
+            # Now actually go through each
             for key_arg in node.cmnd_key_args:
                 # key params CommandKeyParamNode
                 key = key_arg.key.value
 
                 if not (key in cmnd_args):
                     return res.failure(InvalidSyntaxError(key_arg.key.start_pos.copy(), key_arg.key.end_pos.copy(),
-                        f"{key} is not defined in command {cmnd_name}. in other words, this key is not defined as a key-argument in the command's definition.",
+                        f'"{key}" is not defined in command "{cmnd_name_str}". In other words, this key is not defined as a key-argument in the command\'s definition.',
                         ))
 
                 cmnd_args[key] = key_arg.text_group
 
-            # Init pylocals so that the variables can be accessed in python
+            # Init py_locals, the python local variables to add to the current
+            #   context
             py_locals = {}
 
             for key, arg in cmnd_args.items():
+                # Visit the argument node and get the tokens from it
                 new_tokens = res.register(self.visit(arg, context, flags))
-                new_tokens = Tokenizer.marked_up_text_for_tokens(new_tokens)
+
+                # Convert the tokens to MarkedUpText, something that can be used
+                #   in Python
+                marked_up_text = Tokenizer.marked_up_text_for_tokens(new_tokens)
 
                 if res.error:
                     return res
 
-                py_locals[key] = new_tokens
+                # Assign each python local to its marked_up_text
+                py_locals[key] = marked_up_text
 
-            new_context = Context(node.cmnd_name.value, context, node.start_pos.copy(), context.globals, py_locals)
+            child_context = context.gen_child(cmnd_name_str, node.start_pos.copy(), py_locals)
 
             # Just check to make sure that a value has been passed for each needed argument
             for key, value in cmnd_args.items():
                 if value == 0:
                     return res.failure(InvalidSyntaxError(node.cmnd_name.start_pos.copy(), node.cmnd_name.end_pos.copy(),
-                        f'"{key}", an argument in {cmnd_name}, has no value. You need to pass in an argument for it in this call of the command.',
+                        f'"{key}", an argument in {cmnd_name_str}, has no value. You need to pass in an argument for it in this call of the command.',
                         ))
                 else:
-                    new_context.symbols.set(key, value)
+                    child_context.symbols.set(key, value)
 
-            prev_context = self._curr_context
-            self._curr_context = new_context
+            self._push_context(child_context)
 
             # actually run the command now that its variables have been added to the context
-            result = res.register(self.visit(command_to_call.text_group, new_context, flags))
+            result = res.register(self.visit(command_to_call.text_group, child_context, flags))
             if res.error: return res
 
             if result:
                 tokens.extend(result)
 
-            self._curr_context = prev_context
+            self._pop_context()
 
         return res.success(tokens)
 
@@ -2099,15 +2217,28 @@ class Compiler:
     def __init__(self, input_file_path, path_to_std_dir, print_progess_bars=False):
         self._commands = {}
         self._files_by_path = {}
-        assert path.isfile(input_file_path), f'The given path does not exist: {input_file_path}'
+        assert path.isfile(input_file_path), f'The given path is not to a file or does not exist: {input_file_path}'
         self._input_file_path = input_file_path
         self._input_file_dir = path.dirname(input_file_path)
         self._std_dir_path = path_to_std_dir
         self._print_progress_bars = print_progess_bars
 
-        self._curr_interpreter = Interpreter()
         self._toolbox = ToolBox()
         self._compiler_poxy = CompilerProxy(self)
+
+        self._interpreter_stack = []
+
+        # The globals that will be copied every time a fresh set of globals
+        #   is needed
+        self._globals = {'__name__': __name__, '__doc__': None, '__package__': None,
+            '__loader__': __loader__, '__spec__': None, '__annotations__': None,
+            '__builtins__': _copy.deepcopy(globals()['__builtins__']),
+            'compiler':self._compiler_poxy, 'toolbox':ToolBox}
+
+        #   remove any problematic builtins from the globals
+        rem_builtins = []
+        for key in rem_builtins:
+            self._globals['__builtins__'].pop(key)
 
     # -------------------------------------------------------------------------
     # Main Methods
@@ -2117,13 +2248,12 @@ class Compiler:
         Compiles the PDF and returns the PDFDocument that can be used to draw
             the PDF multiple times to different files.
         """
-        # Import the standard library by running the file and then giving the
-        #   context to the main run
-        tokens, context = self._run_file(self._path_to_std(STD_LIB_FILE_NAME), print_progress=True)
+        fresh_context = self._fresh_context(self._input_file_path)
 
-        # Now run the actual file
-        tokens, context = self._run_file(self._input_file_path, context, print_progress=self._print_progress_bars)
-        return Placer(tokens, self._toolbox, context.globals, self._input_file_path, self._print_progress_bars).create_pdf()
+        # Now run the main\input file
+        self._insert_file(self._input_file_path, fresh_context, print_progress=self._print_progress_bars)
+
+        return Placer(fresh_context.token_document(), fresh_context.globals(), self._input_file_path, self._print_progress_bars).create_pdf()
 
     def compile_and_draw_pdf(self, output_pdf_path):
         """
@@ -2137,28 +2267,77 @@ class Compiler:
     def _fresh_globals(self):
         """
         Returns a fresh set of globals as they are before the program starts compiling.
+
+        These globals are for the python exec and eval methods that are used to
+            run python code.
         """
-        new_globals = {'__name__': __name__, '__doc__': None, '__package__': None,
-                '__loader__': __loader__, '__spec__': None, '__annotations__': {},
-                '__builtins__': _copy.deepcopy(globals()['__builtins__']),
-                'compiler':self._compiler_poxy}
+        return {key:val for key, val in self._globals.items()}
 
-        # Now remove any problematic builtins from the globals
-        rem_builtins = []
-        for key in rem_builtins:
-            new_globals['__builtins__'].pop(key)
+    def _fresh_context(self, file_path):
+        """
+        Returns a fresh context for running a file as if it were the main/input
+            file.
+        """
+        parent = None; entry_pos = None; token_document = []; locals = None
+        context = Context(file_path, file_path, parent, entry_pos, token_document, self._fresh_globals(), locals, SymbolTable())
 
-        return new_globals
+        # insert the standard file into the context
+        self._insert_file(self._path_to_std_file(STD_LIB_FILE_NAME), context, print_progress=True)
+
+        return context
+
+    def _push_interpreter(self):
+        """
+        Pushes a new Interpreter onto the interpreter stack.
+        """
+        self._interpreter_stack.append(Interpreter())
+
+    def _pop_interpreter(self):
+        """
+        Pops the _curr_interpreter off the interpreter stack.
+        """
+        return self._interpreter_stack.pop()
+
+    def _curr_interpreter(self):
+        """
+        Returns the current Interpreter.
+        """
+        _is = self._interpreter_stack
+        return None if len(_is) <= 0 else _is[-1]
+
+    def _curr_context(self):
+        """
+        Returns the current Context.
+        """
+        ci = self._curr_interpreter()
+        return None if ci is None else ci._curr_context
+
+    def _curr_tok_document(self):
+        """
+        Returns the current document made of tokens, not to be confused with
+            the PDFDocument object that is returned by the Placer. The "document"
+            returned by this method is a list of Tokens that can be given to
+            a Placer to produce a PDFDocument.
+        """
+        ci = self._curr_interpreter()
+        return None if ci is None else ci._curr_document
 
     def _compiler_import_file(self, file_path, print_progress=False):
         """
-        Imports a file, tokenizing it and determining its Abstract Syntax
-            Tree (AST) before returning it. To run the file, the AST
-            must be run by the Interpreter.
+        Imports a file. If the file has not already been imported by the compiler,
+            this method will read in the file, tokenize, and parse it into
+            an Abstract Syntax Tree (AST), before caching the raw_text, tokens,
+            and ast in a File object and returning the File object. If the file
+            has already been imported, this method will return the cached File
+            object.
+
+            To run the file object, the root of the AST must be visited by the
+            Interpreter. This can be acheived by doing
+
+            Interpreter().visit_root(file.ast)
         """
         assert path.isfile(file_path), f'Tried to import something that is not a file and does not exist: {file_path}'
         file_path = path.abspath(file_path)
-        assert path.isfile(file_path), f'Tried to import something that is not a file and does not exist: {file_path}'
 
         # If file already imported, just return the file
         if file_path in self._files_by_path:
@@ -2199,63 +2378,142 @@ class Compiler:
 
         return file
 
-    def _run_file(self, file_path, context=None, import_commands=True, print_progress=False):
+    def _run_file(self, file, context, print_progress=False):
         """
         Runs a file, importing it first if need be, and returns the tokens and
-            context that that the file generates.
+            context that that the file generates. By "import", I mean that it
+            loads the file into memory, tokenizes it and makes it into an AST,
+            not that it does the same thing as the \\import command
+
+        context is the current Context that you want the file to be run in.
         """
-        file = self._compiler_import_file(file_path, print_progress=print_progress)
-
-        if file.being_imported:
-            raise AssertionError(f'This file is already being imported, the fact that it is being imported again means that it is probably a circular import: {file_path}')
+        if isinstance(file, str):
+            # It should be a file path
+            file_obj = self._compiler_import_file(file, print_progress)
         else:
-            file.being_imported = True
+            # It should be a File object
+            file_obj = file
 
-        if context is not None:
-            if not import_commands:
-                context = context.copy()
-
-            old_disp_name = context.display_name
-            context.display_name = file_path
-
-        elif self._curr_interpreter._curr_context is None:
-            # If the current interpreter has no context, then that means that it
-            #    is the global one ready to run the main file, so give it a fresh
-            #    set of globols and a fresh symbol table
-            context = Context(file.file_path, globals=self._fresh_globals(), symbol_table=SymbolTable())
-            old_disp_name = None
-
+        if file_obj.being_run:
+            raise AssertionError(f"The given file is already being run (imported or inserted), so you probably have a circular import which is not allowed: {file_obj.file_path}")
         else:
-            # Since the interpreter already has a context, that means that
-            #   it is currently running a file, so the file that we are currently
-            #   running needs the current context
-            if import_commands:
-                # Because the Context is mutable, not making it a copy will mean
-                #   that the context in the current interpreter will be changed,
-                #   thus the commands in the file about to be run will be imported
-                #   to the current context
-                context = self._curr_interpreter._curr_context
-            else:
-                context = self._curr_interpreter._curr_context.copy()
-            old_disp_name = context.display_name
-            context.display_name = file_path
+            file_obj.being_run = True
 
-        prior_interpreter = self._curr_interpreter
-        self._curr_interpreter = Interpreter()
+        self._push_interpreter()
 
-        result = self._curr_interpreter.visit_root(file.ast, context, InterpreterFlags(), print_progress)
+        # Save the context's current display_name and file_path
+        old_disp_name = context.display_name
+        old_path = context.file_path
+
+        # Give the context the display name and file path of the file it is now
+        #   going into
+        context.display_name = file_obj.file_path
+        context.file_path = file_obj.file_path
+
+        # Since just pushed interpreter, self._curr_interpreter() should not be None
+        result = self._curr_interpreter().visit_root(file_obj.ast, context, InterpreterFlags(), print_progress)
+
+        # Restore the context's display name and file_path to what they were before
+        context.display_name = old_disp_name
+        context.file_path = old_path
+
+        self._pop_interpreter()
 
         if result.error:
             raise result.error
 
-        self._curr_interpreter = prior_interpreter
+        file_obj.being_run = False
 
-        if old_disp_name is not None:
-            context.display_name = old_disp_name
+        return result.value # Return the tokens gotten by running the file
 
-        file.being_imported = False
+    def _insert_file(self, file_path, context, print_progress=False):
+        """
+        Inserts the file into the current file. This means that the file
+            must be run with the current context as if it were directly in the
+            file.
 
-        return result.value, context # return the tokens for the file as well as the context for it
+        context is the context that this file is being inserted into
+        """
+        # Since the context is directly given to self._run_file, all of the
+        #   commands and whatnot in the global portion of the file will be
+        #   added to the given context as if it was in the context directly
+        #   and not in another file
+        tokens = self._run_file(file_path, context, print_progress)
+        context.token_document().extend(tokens)
+
+    def _import_file(self, file_path, context, commands_to_import=None, print_progress=False):
+        """
+        Imports a file. This is very different from self._insert_file because
+            it takes the file, gives it a fresh context, and runs the file.
+            The resulting context can be saved to the File object for the file
+            because the resulting global context from running the file does
+            not depend on any other file's context. In this way, once a file
+            is imported once, its resulting tokens and Context can be reused
+            over and over again, whereas the tokens and Context from
+            self._insert_file cannot be and the file must be re-run every time
+            it is inserted into a file, regardless of whether it has been
+            inserted into a file before.
+
+        context is the context that you want to import the file into.
+
+        If commands_to_import are given, then only the commands by the names
+            specified in the list of strings will be imported. All Python globals
+            will still, however, be imported.
+        """
+        file_obj = self._compiler_import_file(file_path, print_progress)
+
+        if file_obj.import_context is None:
+            # Since this file has not yet been run, we will have to run it
+            #   now with a fresh context unrelated to any other context
+
+            # Using file_obj.file path in case it is different from the argument file_path
+            context_to_import = self._fresh_context(file_obj.file_path)
+
+            tokens = self._run_file(file_obj, context_to_import, print_progress)
+
+            # Since the file was imported, that means it does not depend on the
+            #   current context and thus the context can be saved and reused later
+            file_obj.import_context = context_to_import
+
+            # I expect most imports to have some global Python code that they
+            #   want to be run on the second pass, so that code must be imported
+            #   too or else it will never reach the Placer and be run.
+            tokens_to_import = []
+            for token in tokens:
+                if isinstance(token, Token) and token.type in (TT.EXEC_PYTH2, TT.EVAL_PYTH2):
+                    tokens_to_import.append(token)
+
+            file_obj.import_tokens = tokens_to_import
+
+        else:
+            # Since this file has been imported before, just reuse the same
+            #   context as last time because the context is not dependant
+            #   on the current context of when/where the file is being run
+            context_to_import = file_obj.import_context
+            tokens_to_import = file_obj.import_tokens
+
+        try:
+            context.import_(context_to_import, tokens_to_import, commands_to_import)
+        except AssertionError as e:
+            raise AssertionError(f'{file_path} could not be imported because of the following error:{e}')
+
+    def _path_to_std_file(self, file_path):
+        """
+        Returns the file path as a file path to a standard directory file.
+        """
+        # Replace the ending of the file path with the one used by all standard files
+        split_file_path = file_path.split('.')
+
+        if len(split_file_path) > 1 and split_file_path[-1] == STD_FILE_ENDING:
+            split_file_path.pop()
+
+        split_file_path.append(STD_FILE_ENDING)
+        file_path = '.'.join(split_file_path)
+
+        # check if the file exists
+        file_path = path.abspath(path.join(self._std_dir_path, file_path))
+        assert path.isfile(file_path), f'The given path does not lead to a file or the path does not exist: {file_path}'
+        return file_path
 
     def _path_rel_to_file(self, file_path, curr_file=False):
         """
@@ -2267,36 +2525,8 @@ class Compiler:
         assert path.isfile(file_path), f'The given path does not lead to a file or the path does not exist: {file_path}'
         return file_path
 
-    def _path_to_std(self, file_path):
-        """
-        Returns the file path as a file path to a standard directory file.
-        """
-        # Replace the ending of the file path with the one used by all standard files
-        split_file_path = file_path.split('.')
-
-        if len(split_file_path) > 1:
-            split_file_path.pop()
-
-        split_file_path.append(STD_FILE_ENDING)
-        file_path = '.'.join(split_file_path)
-
-        # check if the file exists
-        file_path = path.abspath(path.join(self._std_dir_path, file_path))
-        assert path.isfile(file_path), f'The given path does not lead to a file or the path does not exist: {file_path}'
-        return file_path
-
     # --------------------------------
     # Methods available from CompilerProxy
-
-    def insert_text_only(self, file_path):
-        """
-        Runs the file at the given file path and inserts it into the current
-            document. The commands are not imported but the text is inserted.
-
-        The file path is assumed to be relative to the current file.
-        """
-        result, context = self._run_file(self._path_rel_to_file(file_path), import_commands=False)
-        self._curr_interpreter.insert_tokens(result)
 
     def insert_file(self, file_path):
         """
@@ -2315,14 +2545,14 @@ class Compiler:
 
         This file path is assumed to be relative to the main file being run.
         """
-        self._run_file(self._path_rel_to_file(file_path), import_commands=True)
+        self._import_file(self._path_rel_to_file(file_path))
 
     def std_import_file(self, file_path):
         """
         Runs the file at the given file_path, importing its commands but not
             inserting its text into the current document.
         """
-        self._run_file(self._path_to_std(file_path), import_commands=True)
+        self._run_file(self._path_to_std_file(file_path), import_commands=True)
 
     def near_import_file(self, file_path):
         """
@@ -2379,6 +2609,7 @@ class Command:
     """
     Represents a command in the file.
     """
+    __slots__ = ['params', 'key_params', 'text_group']
     def __init__(self, params, key_params, text_group):
         self.params = params
         self.key_params = key_params

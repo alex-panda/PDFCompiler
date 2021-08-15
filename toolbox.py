@@ -11,7 +11,8 @@ from reportlab.lib import units, colors, pagesizes
 from reportlab.pdfbase.pdfmetrics import getFont, getRegisteredFontNames, standardFonts, registerFont
 from reportlab.pdfbase.ttfonts import TTFont
 
-from tools import assure_decimal, trimmed
+from markup import Markup, MarkupStart, MarkupEnd
+from tools import assure_decimal, trimmed, assert_instance, assert_subclass
 from constants import ALIGNMENT, SCRIPT, STRIKE_THROUGH, UNDERLINE
 
 PAGE_SIZES = ( \
@@ -144,6 +145,14 @@ class ToolBox:
 
     # ---------------------------------
     # Other Helpful Methods
+
+    @staticmethod
+    def assert_instance(obj, types, var_name=None, or_none=False):
+        assert_instance(obj, types, var_name, or_none)
+
+    @staticmethod
+    def assert_subclass(obj, types, var_name=None, or_none=False):
+        assert_subclass(obj, types, var_name, or_none)
 
     @staticmethod
     def validate_font(font_name, return_false=False):
