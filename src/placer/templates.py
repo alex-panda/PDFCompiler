@@ -832,7 +832,8 @@ class PDFParagraph(PDFComponent):
 
 class PDFParagraphLine(PDFComponent):
     __slots__ = PDFComponent.__slots__[:]
-    __slots__.extend(['_pdfwords', '_parent_paragraph', '_parent_column'])
+    __slots__.extend(['_pdfwords', '_parent_paragraph', '_parent_column',
+        '_curr_height', '_curr_width', '_curr_alignment'])
 
     def __init__(self):
         super().__init__()
@@ -840,6 +841,10 @@ class PDFParagraphLine(PDFComponent):
 
         self._parent_paragraph = None
         self._parent_column = None
+
+        self._curr_alignment = None
+        self._curr_height = 0
+        self._curr_width = 0
 
     def parent_paragraph(self):
         return self._parent_paragraph
@@ -860,10 +865,59 @@ class PDFParagraphLine(PDFComponent):
         return len(self._pdfwords)
 
     def append_word(self, word):
+        """
+        Appends a word to the end of the line
+        """
         self._pdfwords.append(word)
 
+        # If there is a penultimate word, that word may need to have whether
+        #   it has a space after it changed, which means it needs its dimensions
+        #   recalculated
+        if len(self._pdfwords) > 1:
+            prev_word = self._pdfwords[-2]
+            self._curr_width -= prev_word.total_width()
+            prev_word._space_after = word.space_before()
+            prev_word.calc_dims()
+            self._curr_width += prev_word.total_width()
+
+            th = prev_word.total_height()
+            if self._curr_height < th:
+                self._curr_height = th
+
+        word._space_after = False
+        word.calc_dims()
+        self._curr_width += word.total_width()
+
+        th = word.total_height()
+        if self._curr_height < th:
+            self._curr_height = th
+
     def pop_word(self):
-        return self._pdfwords.pop()
+        """
+        Pops a word off the end of the line.
+        """
+        if len(self._pdfwords) >= 2:
+            prev_word = self._pdfwords[-2]
+            prev_word._space_after = False
+            prev_word.calc_dims()
+
+        word = self._pdfwords.pop()
+
+        width = 0
+        height = 0
+
+        # have recalculate the total height and might as well do width with it
+        #   because the current height is not additive/subtractive, it is the
+        #   max height of the line
+        for pdfword in self._pdfwords:
+            width += pdfword.total_width()
+            th = pdfword.total_height()
+            height = height if height > th else th
+
+        self._curr_width = width
+        self._curr_height = height
+
+        return word
 
     def realign(self, new_alignment):
         """
@@ -872,11 +926,13 @@ class PDFParagraphLine(PDFComponent):
         NOTE: This should only be used in end_callbacks because the words will
             not be positioned anymore after. If you use this in an on_creation
             callback then you will not see the affects of this method since the
-            words will be realigned later.
+            words will be realigned later anyway, probably not to the alignment
+            you want to realign it to.
         """
         from placer.placer import Placer
         Placer._place_words_on_line(self, new_alignment)
 
+    # TODO: Remove
     def calc_word_dims(self):
         """
         Makes all the words in this line recalculate their dimensions. YOU MUST
@@ -893,6 +949,7 @@ class PDFParagraphLine(PDFComponent):
         NOTE: This method iterates through all the inline objects in this
             PDFParagraphLine every single time it is run.
         """
+        return self._curr_width
         total_width = 0
         last_word_idx = len(self._pdfwords) - 1
 
@@ -914,6 +971,7 @@ class PDFParagraphLine(PDFComponent):
         NOTE: This method iterates through all the words in this
             PDFParagraphLine every single time it is run.
         """
+        return self._curr_height
         height = 0
 
         for word in self._pdfwords:

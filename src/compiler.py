@@ -1868,8 +1868,6 @@ class Interpreter:
         self._context_stack = []
         self._curr_context = None
 
-        self._curr_pos = None
-
     def _push_doc(self, document):
         self._document_stack.append(document)
         self._curr_document = document
@@ -2165,9 +2163,9 @@ class Interpreter:
 
 class CompilerProxy:
     """
-    The actual object that is actually given to files being compiled named 'compiler'.
+    The actual object that is given to files being compiled named 'compiler'.
         The reason this object is given and not the actual compiler because
-        this makes it clearer what methods are actually meant to be used in
+        this makes it clear what methods are actually meant to be used in
         the files being compiled.
     """
     def __init__(self, compiler):
@@ -2177,25 +2175,32 @@ class CompilerProxy:
     # Methods for Directory/File Finding
 
     def main_file_path(self):
+        """
+        The path to the main/input file that the compiler started with.
+        """
         return self._compiler.main_file_path()
 
     def main_file_dir(self):
+        """
+        The directory that the main/input file is in.
+        """
         return self._compiler.main_file_dir()
 
     def curr_file_path(self):
+        """
+        The path to the file that is currently being compiled i.e. the file
+            that you are in when you call this method.
+        """
         return self._compiler.curr_file_path()
 
     def curr_file_dir(self):
+        """
+        The directory that the current file being run is in.
+        """
         return self._compiler.curr_file_dir()
 
     # ---------------------------------
     # Methods for importing/inserting files
-
-    def insert_file(self, file_path):
-        self._compiler.insert_file(file_path)
-
-    def insert_file_text_only(self, file_path):
-        self._compiler.insert_text_only(file_path)
 
     def import_file(self, file_path):
         self._compiler.import_file(file_path)
@@ -2208,6 +2213,15 @@ class CompilerProxy:
 
     def far_import_file(self, file_path):
         self._compiler.far_import_file(file_path)
+
+    def insert_file(self, file_path):
+        self._compiler.insert_file(file_path)
+
+    def near_insert_file(self, file_path):
+        self._compiler.near_insert_file(file_path)
+
+    def far_insert_file(self, file_path):
+        self._compiler.far_insert_file(file_path)
 
 
 class Compiler:
@@ -2512,7 +2526,6 @@ class Compiler:
 
         # check if the file exists
         file_path = path.abspath(path.join(self._std_dir_path, file_path))
-        assert path.isfile(file_path), f'The given path does not lead to a file or the path does not exist: {file_path}'
         return file_path
 
     def _path_rel_to_file(self, file_path, curr_file=False):
@@ -2520,10 +2533,47 @@ class Compiler:
         Returns the file path if the given path is relative to the main file
             being run or the current file being run.
         """
-        dir = self.curr_file_path_dir() if curr_file else self._main_file_path_dir()
+        dir = self._curr_file_path_dir() if curr_file else self._main_file_path_dir()
         file_path = path.abspath(path.join(dir, file_path))
-        assert path.isfile(file_path), f'The given path does not lead to a file or the path does not exist: {file_path}'
         return file_path
+
+    def _get_near_path(self, file_path):
+        """
+        Gets the near path to insert/import. This checks the path relative to
+            to the current file first, then checks the file relative to the
+            main/input file, and then it checks the standard directory.
+        """
+        ret_path = cf_rel_path = self._path_rel_to_file(file_path, curr_file=True)
+
+        if not path.isfile(ret_path):
+            ret_path = input_rel_path = self._path_rel_to_file(file_path, curr_file=False)
+
+            if not path.isfile(ret_path):
+                _file_path, file_name = path.split(file_path)
+                ret_path = std_path = self._path_to_std_file(file_path)
+
+                assert path.isfile(std_path), f'Could not get near path for "{file_path}" because neither "{cf_rel_path}", nor "{input_rel_path}", nor "{std_path}" lead to a file and/or exist.'
+
+        return ret_path
+
+    def _get_far_path(self, file_path):
+        """
+        Gets the far path to insert/import. This checks the standard directory
+            first and then checks the path relative to the main/input file
+            and then checks the path relative to the current file.
+        """
+        _file_path, file_name = path.split(file_path)
+        ret_path = std_path = self._path_to_std_file(file_path)
+
+        if not path.isfile(ret_path):
+            ret_path = input_rel_path = self._path_rel_to_file(file_path, curr_file=False)
+
+            if not path.isfile(ret_path):
+                ret_path = cf_rel_path = self._path_rel_to_file(file_path, curr_file=True)
+
+                assert path.isfile(std_path), f'Could not get far path for "{file_path}" because neither "{std_path}", nor "{input_rel_path}", nor "{cf_rel_path}" lead to a file and/or exist.'
+
+        return ret_path
 
     # --------------------------------
     # Methods available from CompilerProxy
@@ -2535,8 +2585,31 @@ class Compiler:
 
         The file path is assumed to be relative to the current file.
         """
-        result, context = self._run_file(self._path_rel_to_file(file_path), import_commands=True)
-        self._curr_interpreter.insert_tokens(result)
+        cc = self.curr_context()
+        assert cc is not None, 'Cannot insert into a Non-existent Context. This is a Compiler error, report it the people making the compiler.'
+
+        # Actually insert the file
+        self._insert_file(self._path_rel_to_file(file_path), cc, print_progress=self._print_progress_bars)
+
+    def near_insert_file(self, file_path):
+        """
+        Runs the file at the given file_path, importing its commands but not
+            inserting its text into the current document.
+        """
+        cc = self.curr_context()
+        assert cc is not None, 'Cannot insert into a Non-existent Context. This is a Compiler error, report it the people making the compiler.'
+
+        self._insert_file(self._get_near_path(file_path), cc, print_progress=self._print_progress_bars)
+
+    def far_insert_file(self, file_path):
+        """
+        Runs the file at the given file_path, importing its commands but not
+            inserting its text into the current document.
+        """
+        cc = self.curr_context()
+        assert cc is not None, 'Cannot far insert into a Non-existent Context. This is a Compiler error, report it the people making the compiler.'
+
+        self._insert_file(self._get_far_path(file_path), cc, print_progress=self._print_progress_bars)
 
     def import_file(self, file_path):
         """
@@ -2545,39 +2618,40 @@ class Compiler:
 
         This file path is assumed to be relative to the main file being run.
         """
-        self._import_file(self._path_rel_to_file(file_path))
+        cc = self.curr_context()
+        assert cc is not None, 'Cannot import into a Non-existent Context. This is a Compiler error, report it the people making the compiler.'
+
+        self._import_file(self._path_rel_to_file(file_path), cc, print_progress=self._print_progress_bars)
 
     def std_import_file(self, file_path):
         """
         Runs the file at the given file_path, importing its commands but not
             inserting its text into the current document.
         """
-        self._run_file(self._path_to_std_file(file_path), import_commands=True)
+        cc = self.curr_context()
+        assert cc is not None, 'Cannot import into a Non-existent Context. This is a Compiler error, report it the people making the compiler.'
+
+        self._import_file(self._path_to_std_file(file_path), cc, print_progress=self._print_progress_bars)
 
     def near_import_file(self, file_path):
         """
         Runs the file at the given file_path, importing its commands but not
             inserting its text into the current document.
         """
-        try:
-            self._import_file(file_path)
-        except AssertionError as e:
-            _file_path, file_name = path.split(file_path)
-            self._std_import_file(file_name)
+        cc = self.curr_context()
+        assert cc is not None, 'Cannot import into a Non-existent Context. This is a Compiler error, report it the people making the compiler.'
+
+        self._import_file(self._get_near_path(file_path), cc, print_progress=self._print_progress_bars)
 
     def far_import_file(self, file_path):
         """
         Runs the file at the given file_path, importing its commands but not
             inserting its text into the current document.
         """
-        try:
-            _file_path, file_name = path.split(file_path)
-            self._std_import_file(file_name)
-        except AssertionError as e:
-            try:
-                self._import_file(file_path)
-            except AssertionError as e:
-                raise AssertionError(f'Could not far import file path "{file_path}"')
+        cc = self.curr_context()
+        assert cc is not None, 'Cannot import into a Non-existent Context. This is a Compiler error, report it the people making the compiler.'
+
+        self._import_file(self._get_far_path(file_path), cc, print_progress=self._print_progress_bars)
 
     def main_file_path(self):
         """
@@ -2596,7 +2670,9 @@ class Compiler:
         """
         Returns an absolute path to the current file that is being run.
         """
-        self._curr_interpreter._curr_context.display_name
+        cc = self.curr_context()
+        assert cc is not None, f'The current context was None so the current file path could not be retrieved.'
+        return cc.file_path
 
     def curr_file_dir(self):
         """

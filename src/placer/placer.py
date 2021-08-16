@@ -443,13 +443,18 @@ class Placer:
         ppl = pdf_paragraph_line
         align = alignment
 
-        # Align the words left
-        offset = ppl.inner_offset()
-        for word in ppl._pdfwords:
-            word.set_total_offset(offset)
-            offset += Point(word.total_width(), 0)
+        if ppl._curr_alignment != ALIGNMENT.LEFT:
+            # Align the words left
+            offset = ppl.inner_offset()
+            for word in ppl._pdfwords:
+                word.set_total_offset(offset)
+                offset += Point(word.total_width(), 0)
+
+            ppl._curr_alignment = ALIGNMENT.LEFT
 
         if align == ALIGNMENT.CENTER:
+            ppl._curr_alignment = ALIGNMENT.CENTER
+
             # Now nudge the words that are aligned left to the right so that
             # they are centered
 
@@ -461,6 +466,8 @@ class Placer:
                 word.set_total_offset(word.total_offset() + Point(nudge_amt, 0))
 
         elif align == ALIGNMENT.RIGHT:
+            ppl._curr_alignment = ALIGNMENT.RIGHT
+
             # Now nudge the words that are aligned left to the right so that
             # they are right aligned
             nudge_amt = ppl.inner_width() - ppl.curr_width()
@@ -469,7 +476,8 @@ class Placer:
                 word.set_total_offset(word.total_offset() + Point(nudge_amt, 0))
 
         elif align == ALIGNMENT.JUSTIFY:
-            word_cnt = 0
+            ppl._curr_alignment = ALIGNMENT.JUSTIFY
+            word_cnt = 1
 
             for i, word in enumerate(ppl._pdfwords):
                 if i != 0 and word._space_before:
@@ -533,7 +541,6 @@ class Placer:
 
             ppl.append_word(word)
 
-            ppl.calc_word_dims()
             curr_height = ppl.curr_height()
 
             if ppl.curr_width() > available_width:
