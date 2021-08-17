@@ -1,0 +1,4 @@
+ - It is considered bad form to insert a hyphen unless at least two letters
+   precede it and three follow it; furthermore  the syllable following a hyphen
+   shouldn’t have a silent  ‘e’, so we  do not  admit a hyphenation  like
+   ‘sylla-ble’

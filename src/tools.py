@@ -4,7 +4,54 @@ from constants import PB_SUFFIX, PB_NUM_DECS, PB_LEN, PB_UNFILL, PB_FILL, PB_NUM
 import os
 
 def assure_decimal(val):
+    """
+    Assures that the given value is a decimal value, turning it into one if
+        possible and raising an error otherwise.
+    """
     return Decimal(val)
+
+def time_to_str(time_in_seconds):
+    """
+    Takes a time in Seconds and converts it to a string displaying it
+        in Years, Days, Hours, Minutes, Seconds.
+    """
+    seconds = time_in_seconds
+    minutes = None
+    hours = None
+    days = None
+    years = None
+
+    if seconds > 60:
+        minutes = seconds // 60
+        seconds -= seconds % 60
+
+    if minutes and minutes > 60:
+        hours = minutes // 60
+        minutes %= 60
+
+    if hours and hours > 24:
+        days = hours // 24
+        hours %= 24
+
+    if days and days > 365:
+        years = days // 365
+        days %= 365
+
+    s = ''
+
+    if years:
+        s += '{:d} Year(s), '.format(int(years))
+    if days:
+        s += '{:d} Day(s), '.format(int(days))
+    if hours:
+        s += '{:d} Hour(s), '.format(int(hours))
+    if minutes:
+        s += '{:d} Minute(s)'.format(int(minutes))
+        s += (', ' if hours else ' ') + 'and '
+
+    s += '{:0.3f} Second(s)'.format(seconds)
+
+    return s
 
 def calc_prog_bar_refresh_rate(total):
     """
@@ -26,15 +73,22 @@ def calc_prog_bar_refresh_rate(total):
     # The + 1 is so that it will never be 0, because number % 0 raises an error
     return rate + 1
 
-def prog_bar_prefix(prefix, file_path, align='^', suffix=':'):
+def prog_bar_prefix(prefix, file_path, align='^', suffix=':', append=None):
     """
     Create the correct prefix for each progress bar.
     """
     file_path = file_path.split('\\')[-1].split('/')[-1]
     file_path = file_path if len(file_path) <= PB_NAME_SPACE else file_path[-PB_NAME_SPACE:]
+
     prefix = ('{' + (f':>{PB_PREFIX_SPACE}') + '}').format(prefix)
     new_prefix = (OUT_TAB * PB_NUM_TABS) + prefix
-    new_prefix += (' {' + (f':{align}{PB_NAME_SPACE}') + '}').format(file_path) + suffix
+
+    new_prefix += ('{' + (f':{align}{PB_NAME_SPACE}') + '}').format(file_path) + suffix
+
+    if append is not None:
+        new_prefix = new_prefix.rstrip()
+        new_prefix += append
+
     return new_prefix
 
 # Print iterations progress
@@ -50,7 +104,12 @@ def print_progress_bar (iteration, total, prefix='', suffix=PB_SUFFIX, decimals=
         length      - Optional  : character length of bar (Int)
         unfil       - Optional  : bar not-filled character (Str)
         fill        - Optional  : bar fill character (Str)
+
+    Returns True if the final, full bar (100% bar) was printed, False otherwise.
     """
+    if total == 0:
+        iteration = total = 1
+
     percent = ("{:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
 
     num_cols = os.get_terminal_size().columns
@@ -82,8 +141,10 @@ def print_progress_bar (iteration, total, prefix='', suffix=PB_SUFFIX, decimals=
 
     if iteration < total:
         print(f'\r{prefix}{bar}{percent}% {suffix}', end='')
+        return False
     else:
         print(f'\r{prefix}{bar}{percent}% {suffix}', end='\n')
+        return True
 
 def assert_instance(obj, types, var_name=None, or_none=True):
     if not (isinstance(obj, types) or (or_none and obj is None)):
@@ -187,6 +248,8 @@ def exec_python(code, exec_globals:dict, exec_locals:dict=None):
 
     if 'ret' in exec_globals:
         return str(exec_globals.pop('ret'))
+    elif exec_locals and 'ret' in exec_locals:
+        return str(exec_locals.pop('ret'))
     else:
         return None
 

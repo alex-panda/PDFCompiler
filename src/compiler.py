@@ -11,11 +11,12 @@ from reportlab.lib.units import inch, cm, mm, pica, toLength
 from reportlab.lib import units, colors, pagesizes as pagesizes
 
 from placer.placer import Placer
-from constants import CMND_CHARS, END_LINE_CHARS, ALIGNMENT, TT, TT_M, WHITE_SPACE_CHARS, NON_END_LINE_CHARS, PB_NUM_TABS, PB_NAME_SPACE, STD_FILE_ENDING, STD_LIB_FILE_NAME
+from constants import CMND_CHARS, END_LINE_CHARS, ALIGNMENT, TT, TT_M, WHITE_SPACE_CHARS, NON_END_LINE_CHARS, PB_NUM_TABS, PB_NAME_SPACE, STD_FILE_ENDING, STD_LIB_FILE_NAME, OUT_TAB
 from tools import assure_decimal, is_escaped, is_escaping, exec_python, eval_python, string_with_arrows, trimmed, print_progress_bar, prog_bar_prefix, calc_prog_bar_refresh_rate, assert_instance
 from marked_up_text import MarkedUpText
 from markup import Markup, MarkupStart, MarkupEnd
 from toolbox import ToolBox
+from placer.placers.naiveplacer import NaivePlacer
 
 # -----------------------------------------------------------------------------
 # Errors That Can Occur While Compiling
@@ -203,6 +204,7 @@ class Tokenizer:
         self._space_before_plaintext = False
         self._unpaired_cbrackets = 0
         self._unpaired_oparens = 0
+
         self._tokens = []
         self._advance()
 
@@ -354,7 +356,10 @@ class Tokenizer:
             text_len = len(self._text)
             prefix = prog_bar_prefix('Tokenizing', self._pos.file_path)
             refresh = calc_prog_bar_refresh_rate(text_len)
-            print_progress_bar(0, text_len, prefix)
+            full_bar_printed = False
+
+            if print_progress_bar(0, text_len, prefix):
+                full_bar_printed = True
 
         # By default, all text is plain text until something says otherwise
         while self._current_char is not None:
@@ -441,8 +446,8 @@ class Tokenizer:
                     # t must be a list of tokens
                     self._tokens.extend(t)
 
-        if print_progress:
-            print_progress_bar(self._pos.idx, text_len, prefix)
+        if print_progress and not full_bar_printed:
+            print_progress_bar(text_len, text_len, prefix)
 
         if self._unpaired_cbrackets > 0:
             raise InvalidSyntaxError(self._first_unpaired_bracket_pos.copy(), self._first_unpaired_bracket_pos.copy().advance(),
@@ -450,7 +455,7 @@ class Tokenizer:
 
         if self._unpaired_oparens > 0:
             raise InvalidSyntaxError(self._first_unpaired_oparens_pos.copy(), self._first_unpaired_oparens_pos.copy().advance(),
-                    f'{self._unpaired_oparens} unpaired, unescaped, opening parenthes(es) "(" starting from this opening curly bracket. Either escape each one by putting a backslash before them or pair them with a closing parenthesis ")".')
+                    f'{self._unpaired_oparens} unpaired, unescaped, opening parenthes(es) "(" starting from this open parenthes(es). Either escape each one by putting a backslash before them or pair them with a closing parenthesis ")".')
 
         self._try_word_token()
 
@@ -1648,6 +1653,7 @@ class RunTimeResult:
         finishes visiting a Node, it can tell the Node that visited it various
         things such as whether to return immediately or not.
     """
+    __slots__ = ['value', 'error']
     def __init__(self):
         self.reset()
 
@@ -1729,12 +1735,20 @@ class SymbolTable:
 
         return new
 
+    def __repr__(self):
+        string = f'\n{type(self).__name__}('
+        string += f'symbols={self.symbols}'
+        string += ')'
+        return string
+
 class Context:
     """
     Provides Context for every command/amount of python code that is run. By
         that I mean that the Context determines what commands and variables are
         available and when.
     """
+    __slots__ = ['display_name', 'file_path', 'entry_pos', 'parent',
+            '_globals', '_locals', 'symbols', '_token_document', 'global_level']
     def __init__(self, display_name, file_path, parent=None, entry_pos=None, token_document=None, globals=None, locals=None, symbol_table=None):
         """
         Context could be a function if in a function or the entire program
@@ -1766,6 +1780,29 @@ class Context:
             self._token_document = token_document
         else:
             self._token_document = []
+
+        self.global_level = True
+
+    def __repr__(self):
+        string = f'\n{type(self).__name__}(\n'
+        string += f'\tdisplay_name={self.display_name}'
+        string += f'\tsymbols={self.symbols}'
+        string += f'\tglobals={self._globals}'
+        string += f'\tlocals={self._locals}'
+        string += f'\tparent={self.parent}'
+        string += '\n)'
+        return string
+
+    def copy(self):
+        _globals = None if self._globals is None else {key:val for key, val in self._globals.items()}
+        _locals = None if self._locals is None else {key:val for key, val in self._locals.items()}
+        entry_pos = None if self.entry_pos is None else self.entry_pos.copy()
+        parent = None if self.parent is None else self.parent.copy()
+
+        new = Context(self.display_name, self.file_path, parent, entry_pos, self._token_document[:], _globals, _locals)
+
+        new.symbols = self.symbols.copy()
+        return new
 
     def gen_child(self, child_display_name:str, child_entry_pos=None, locals_to_add=None):
         """
@@ -1799,7 +1836,9 @@ class Context:
 
         # Give the new context a reference to globals so that it does not have
         #   to walk up a bunch of parents to get it anyway
-        return Context(child_display_name, self.file_path, parent, child_entry_pos, self.token_document(), self.globals(), child_lcls, SymbolTable(self.symbols))
+        child = Context(child_display_name, self.file_path, parent, child_entry_pos, self.token_document(), self.globals(), child_lcls, SymbolTable(self.symbols))
+        child.global_level = False
+        return child
 
     def import_(self, other_context, tokens_to_import=[], commands_to_import=None):
         """
@@ -1809,21 +1848,6 @@ class Context:
         self.globals().update(other_context.globals())
 
         self.token_document().extend(tokens_to_import)
-
-    def copy(self):
-        """
-        Returns a copy of this Context.
-        """
-        import copy
-
-        parent = None if self.parent is None else self.parent.copy()
-        parent_entry_pos = None if self.parent_entry_pos is None else self.parent_entry_pos.copy()
-        _globals = None if self._globals is None else copy.deepcopy(self._globals)
-        _locals = None if self._locals is None else copy.deepcopy(self._locals)
-        symbols = self.symbols.copy()
-        token_doc = self._token_document[:]
-
-        return Context(self.display_name, parent, parent_entry_pos, token_doc, _globals, _locals, symbols)
 
     def globals(self):
         if self._globals is not None:
@@ -1842,6 +1866,9 @@ class Context:
             make the PDFDocument.
         """
         return self._token_document
+
+    def set_token_document(self, new_doc):
+        self._token_document = new_doc
 
 class InterpreterFlags:
     """
@@ -1862,50 +1889,40 @@ class Interpreter:
         node.
     """
     def __init__(self):
-        self._document_stack = []
-        self._curr_document = None
-
         self._context_stack = []
         self._curr_context = None
 
-    def _push_doc(self, document):
-        self._document_stack.append(document)
-        self._curr_document = document
-
-    def _pop_doc(self):
-        doc = self._document_stack.pop()
-        self._curr_document = None if len(self._document_stack) <= 0 else self._document_stack[-1]
-
-    def curr_document(self):
-        return self._curr_document
+        self._command_node_stack = []
+        self._curr_command_node = None
 
     def _push_context(self, context):
         self._context_stack.append(context)
         self._curr_context = context
 
     def _pop_context(self):
-        ctx = self._context_stack.pop()
-        self._curr_context = None if len(self._context_stack) <= 0 else self._context_stack[-1]
+        self._context_stack.pop()
+        self._curr_context = self._context_stack[-1] if len(self._context_stack) > 0 else None
 
     def curr_context(self):
         return self._curr_context
 
-    def insert_tokens(self, tokens):
-        """
-        Inserts the given tokens into the current document.
-        """
-        self._curr_document.extend(tokens)
+    def _push_command_node(self, command_node):
+        self._command_node_stack.append(command_node)
+        self._curr_command_node = command_node
 
-    def curr_pos(self):
-        return self._curr_pos
+    def _pop_command_node(self):
+        self._command_node_stack.pop()
+        self._curr_command_node = self._command_node_stack[-1] if len(self._command_node_stack) > 0 else None
+
+    def curr_command_node(self):
+        return self._curr_command_node
 
     def visit_root(self, node, context, flags, print_progress=False):
         """
         The visit to the root node of an AST.
         """
         if print_progress:
-            print()
-            print(prog_bar_prefix('Running AST for', context.display_name, align='<', suffix=''))
+            print(prog_bar_prefix(f'{OUT_TAB}Running AST for ', f'{context.display_name}', align='>', suffix='', append='...'))
 
         prev_context = self._curr_context
         self._curr_context = context
@@ -1915,7 +1932,7 @@ class Interpreter:
         self._curr_context = prev_context
 
         if print_progress:
-            print(prog_bar_prefix('Done Running AST for', context.display_name, align='<', suffix='\n'))
+            print(prog_bar_prefix(f'{OUT_TAB}Done Running AST for ', context.display_name, align='>', suffix='', append=''))
 
         return result
 
@@ -1944,8 +1961,10 @@ class Interpreter:
 
         document = []
 
-        # set the current document to the new one
-        self._push_doc(document)
+        was_global = context.global_level
+
+        if was_global:
+            context.global_level = False
 
         for paragraph in node.paragraphs:
             write_tokens = res.register(self.visit(paragraph, context, flags))
@@ -1953,15 +1972,20 @@ class Interpreter:
             if res.error:
                 return res
             else:
+                if was_global:
+                    context.token_document().extend(write_tokens)
                 document.extend(write_tokens)
 
-        # Set the current document back to what it was previously
-        self._pop_doc()
+        if was_global:
+            context.global_level = True
 
         return res.success(document)
 
     def _visit_ParagraphNode(self, node, context, flags):
         res = RunTimeResult()
+
+        # How long the document has gotten so far
+        i = len(context.token_document())
 
         # Visit the writing (could be Plaintext, Python, command def, or a Command call)
         write_tokens = res.register(self.visit(node.writing, context, flags))
@@ -1969,11 +1993,15 @@ class Interpreter:
         if res.error:
             return res
 
-        if isinstance(write_tokens, str):
-            write_tokens = Tokenizer.plaintext_tokens_for_str(write_tokens)
+        if len(write_tokens) > 0:
+            # Command was called and this Class was used to make the length
+            #   of the write_tokens > 0 because a command was called
+            if write_tokens[0] == Interpreter.CommandCalled:
+                write_tokens.pop(0)
 
-        if len(write_tokens) > 0 and node.paragraph_break:
-            write_tokens.insert(0, node.paragraph_break)
+            if node.paragraph_break:
+                # Add the paragraph break to before the current text was added
+                context.token_document().insert(i, node.paragraph_break)
 
         return res.success(write_tokens)
 
@@ -2048,12 +2076,26 @@ class Interpreter:
         cmnd_name_str = node.cmnd_name.value
         command_to_call = context.symbols.get(cmnd_name_str)
 
+        self._push_command_node(node)
+
         if command_to_call is None:
-            res.failure(RunTimeError(node.cmnd_name.start_pos.copy(), node.cmnd_name.end_pos.copy(),
+            # The command is undefined
+            return res.failure(RunTimeError(node.cmnd_name.start_pos.copy(), node.cmnd_name.end_pos.copy(),
                 '\\' + f'"{cmnd_name_str}" is not defined at this point in the code.',
                 context
                 ))
         elif isinstance(command_to_call, TextGroupNode):
+            # Handle when the "command" is actually a parameter that contains
+            #   text. For example, in
+            #
+            #   \hello = (\test) {
+            #       \test
+            #   }
+            #
+            #   \test is a actually storing a TextGroupNode when the command
+            #   \hello is called, so this method handles returning the TextGroupNode
+            #   that that \test contains when \test is called
+
             result = res.register(self.visit(command_to_call, context, flags))
 
             if res.error: return res
@@ -2061,37 +2103,59 @@ class Interpreter:
             if result:
                 tokens.extend(result)
         else:
+            # Command is defined and we need to call it
             min_args = len(command_to_call.params)
             max_args = min_args + len(command_to_call.key_params)
 
-            num_args_given = len(node.cmnd_key_args) + len(node.cmnd_tex_args)
+            num_positional_args = len(node.cmnd_tex_args)
+            num_key_args = len(node.cmnd_key_args)
+            num_args_given = num_positional_args + num_key_args
 
-            if num_args_given > max_args:
-                res.failure(InvalidSyntaxError(node.cmnd_name.start_pos.copy(), node.cmnd_name.end_pos.copy(),
-                    f'The {node.cmnd_name.value} command takes {max_args} arguments max, but {num_args_given} where given.',
+            # Check if enough positional arguments were given
+            if num_positional_args < min_args:
+                return res.failure(InvalidSyntaxError(node.cmnd_name.start_pos.copy(), node.cmnd_name.end_pos.copy(),
+                    f'The "{cmnd_name_str}" command requires {min_args} argument(s), but {num_positional_args} was/were given.',
                     ))
 
-            if num_args_given < min_args:
-                res.failure(InvalidSyntaxError(node.cmnd_name.start_pos.copy(), node.cmnd_name.end_pos.copy(),
-                    f'The {node.cmnd_name.value} command takes {min_args} arguments minimum, but {num_args_given} where given.',
+            # Check if too many arguments were given
+            if num_args_given > max_args:
+                return res.failure(InvalidSyntaxError(node.cmnd_name.start_pos.copy(), node.cmnd_name.end_pos.copy(),
+                    f'The "{cmnd_name_str}" command takes {max_args} argument(s) max, but {num_args_given} was/were given.',
                     ))
 
             cmnd_args = {}
 
-            # Initialize the args to 0
-            for cmnd_arg in command_to_call.params:
-                cmnd_args[cmnd_arg.identifier.value] = 0
+            # Add all the command names first
+            cmnd_and_key_param_names = []
 
-            # now replace each KEY-ARGUMENT's value with its default value
+            for param in command_to_call.params:
+                name = param.identifier.value
+
+                if name in cmnd_and_key_param_names:
+                    return res.failure(InvalidSyntaxError(node.cmnd_name.start_pos.copy(), node.cmnd_name.end_pos.copy(),
+                            f'The argument "{name}" was given more than one time. Every argument can only be given once, either by a key-argument or a positional argument.'
+                        ))
+
+                cmnd_and_key_param_names.append(name)
+
+            # Take each Parameter key-value pair (so the key-value pairs
+            #   in the definition of the command) and add them to the dict
             for cmnd_key_param in command_to_call.key_params:
-                cmnd_args[cmnd_key_param.key.value] = cmnd_key_param.text_group
+                name = cmnd_key_param.key.value
 
-            # now replace each of the POSITIONAL-ARGUMENT's value with its positional value
-            for param, arg in zip(command_to_call.params, node.cmnd_tex_args):
-                # params are CommandParamNode
-                cmnd_args[cmnd_arg.identifier.value] = arg.text_group
+                # Now add the key-params because the positional arguments will
+                #   fullfill parameters and key-parameters in the order that
+                #   they are in cmnd_and_key_param_names
+                if name in cmnd_and_key_param_names:
+                    return res.failure(InvalidSyntaxError(node.cmnd_name.start_pos.copy(), node.cmnd_name.end_pos.copy(),
+                            f'The argument "{name}" was given more than one time. Every argument can only be given once, either by a key-argument or a positional argument.'
+                        ))
+                cmnd_and_key_param_names.append(name)
 
-            # Now actually go through each
+                cmnd_args[name] = cmnd_key_param.text_group
+
+            # Now replace those key-value pairs from the definiton of the command
+            #   with those given in the call of command
             for key_arg in node.cmnd_key_args:
                 # key params CommandKeyParamNode
                 key = key_arg.key.value
@@ -2102,6 +2166,13 @@ class Interpreter:
                         ))
 
                 cmnd_args[key] = key_arg.text_group
+
+            # now take each name from the POSITIONAL-ARGUMENT names provided in
+            #   the command's definition and provide the values for them from
+            #   the command call
+            for param_name, arg in zip(cmnd_and_key_param_names, node.cmnd_tex_args):
+                # params are CommandParamNode
+                cmnd_args[param_name] = arg.text_group
 
             # Init py_locals, the python local variables to add to the current
             #   context
@@ -2138,10 +2209,24 @@ class Interpreter:
             result = res.register(self.visit(command_to_call.text_group, child_context, flags))
             if res.error: return res
 
-            if result:
-                tokens.extend(result)
+            tokens = result
 
             self._pop_context()
+
+        self._pop_command_node()
+
+        if len(result) > 0:
+            # Find the first Token and set space_before to True if the
+            #   command call had space_before = True, otherwise set it False
+            for token in result:
+                if isinstance(token, Token):
+                    token.space_before = node.cmnd_name.space_before
+                    break
+
+        # Tells the Paragraph Node that a Command was called so that it can
+        #   decide whether to insert a paragraph break depending on whether
+        #   there was one before the Command was called or not
+        tokens.insert(0, Interpreter.CommandCalled)
 
         return res.success(tokens)
 
@@ -2152,11 +2237,26 @@ class Interpreter:
         if res.error:
             return res
 
+        for token in doc_tokens:
+            if isinstance(token, Token):
+                token.space_before = node.ocbrace.space_before
+                break
+
         return res.success(doc_tokens)
 
     def _visit_PlainTextNode(self, node, context, flags):
         res = RunTimeResult()
         return res.success(node.plain_text)
+
+    # -----------------------------
+    # Helper Classes
+    class CommandCalled:
+        """
+        A helper class that just tells the Paragraph Node that a Command was
+            called so that it can make an imformed decision on whether to add a
+            paragraph break
+        """
+        pass
 
 # -----------------------------------------------------------------------------
 # Compiler Class
@@ -2202,14 +2302,14 @@ class CompilerProxy:
     # ---------------------------------
     # Methods for importing/inserting files
 
-    def import_file(self, file_path):
-        self._compiler.import_file(file_path)
+    def strict_import_file(self, file_path):
+        self._compiler.strict_import_file(file_path)
 
     def std_import_file(self, file_path):
         self._compiler.std_import_file(file_path)
 
-    def near_import_file(self, file_path):
-        self._compiler.near_import_file(file_path)
+    def import_file(self, file_path):
+        self._compiler.import_file(file_path)
 
     def far_import_file(self, file_path):
         self._compiler.far_import_file(file_path)
@@ -2217,11 +2317,20 @@ class CompilerProxy:
     def insert_file(self, file_path):
         self._compiler.insert_file(file_path)
 
-    def near_insert_file(self, file_path):
-        self._compiler.near_insert_file(file_path)
+    def strict_insert_file(self, file_path):
+        self._compiler.strict_insert_file(file_path)
 
     def far_insert_file(self, file_path):
         self._compiler.far_insert_file(file_path)
+
+    # ---------------------------------
+    # Other Methods
+
+    def placer_class(self):
+        return self._compiler.placer_class()
+
+    def set_placer_class(self, placer_class):
+        return self._compiler.set_placer_class(placer_class)
 
 
 class Compiler:
@@ -2239,6 +2348,8 @@ class Compiler:
 
         self._toolbox = ToolBox()
         self._compiler_poxy = CompilerProxy(self)
+
+        self._placer_class = NaivePlacer
 
         self._interpreter_stack = []
 
@@ -2267,7 +2378,7 @@ class Compiler:
         # Now run the main\input file
         self._insert_file(self._input_file_path, fresh_context, print_progress=self._print_progress_bars)
 
-        return Placer(fresh_context.token_document(), fresh_context.globals(), self._input_file_path, self._print_progress_bars).create_pdf()
+        return self._placer_class(fresh_context.token_document(), fresh_context.globals(), self._input_file_path, self._print_progress_bars).create_pdf()
 
     def compile_and_draw_pdf(self, output_pdf_path):
         """
@@ -2290,13 +2401,13 @@ class Compiler:
     def _fresh_context(self, file_path):
         """
         Returns a fresh context for running a file as if it were the main/input
-            file.
+            file (even if it isn't actually the main/input file).
         """
         parent = None; entry_pos = None; token_document = []; locals = None
         context = Context(file_path, file_path, parent, entry_pos, token_document, self._fresh_globals(), locals, SymbolTable())
 
         # insert the standard file into the context
-        self._insert_file(self._path_to_std_file(STD_LIB_FILE_NAME), context, print_progress=True)
+        self._insert_file(self._path_to_std_file(STD_LIB_FILE_NAME), context, print_progress=self._print_progress_bars)
 
         return context
 
@@ -2350,7 +2461,7 @@ class Compiler:
 
             Interpreter().visit_root(file.ast)
         """
-        assert path.isfile(file_path), f'Tried to import something that is not a file and does not exist: {file_path}'
+        assert path.isfile(file_path), f'Could not import "{file_path}"'
         file_path = path.abspath(file_path)
 
         # If file already imported, just return the file
@@ -2452,8 +2563,49 @@ class Compiler:
         #   commands and whatnot in the global portion of the file will be
         #   added to the given context as if it was in the context directly
         #   and not in another file
-        tokens = self._run_file(file_path, context, print_progress)
-        context.token_document().extend(tokens)
+
+        was_global = context.global_level
+        context.global_level = True
+
+        i = len(context.token_document())
+
+        self._run_file(file_path, context, print_progress)
+
+        # Want to add a space before the first Token we come accross.
+        # Note: the compiler may still not render a space before the token
+        #   if the token is at the start of a line. That is why this is safe
+        #   to do. We are meely saying "this Token should have a space before
+        #   it if it makes sense to have one before it"
+        doc = context.token_document()
+
+        ci = self._curr_interpreter()
+        if ci and ci.curr_command_node():
+            ccc = ci.curr_command_node()
+
+            length = len(doc)
+
+            while True:
+                if i >= length:
+                    # reached end of Token document without finding a single
+                    #   Token
+                    break
+
+                curr = doc[i]
+
+                if isinstance(curr, Token):
+                    # Found a Token so set whether it has a space before it based
+                    #   on the current command that is being run and whether
+                    #   the command has a space before it (i.e. if there is
+                    #   space before \insert{file_path}, then the first token
+                    #   of the inserted text from the file should have a space
+                    #   before it, otherwise it should not have a space before
+                    #   it)
+                    curr.space_before = ccc.cmnd_name.space_before
+                    break
+
+                i += 1
+
+        context.global_level = was_global
 
     def _import_file(self, file_path, context, commands_to_import=None, print_progress=False):
         """
@@ -2528,12 +2680,12 @@ class Compiler:
         file_path = path.abspath(path.join(self._std_dir_path, file_path))
         return file_path
 
-    def _path_rel_to_file(self, file_path, curr_file=False):
+    def _path_rel_to_file(self, file_path, curr_file=True):
         """
         Returns the file path if the given path is relative to the main file
             being run or the current file being run.
         """
-        dir = self._curr_file_path_dir() if curr_file else self._main_file_path_dir()
+        dir = self.curr_file_dir() if curr_file else self.main_file_dir()
         file_path = path.abspath(path.join(dir, file_path))
         return file_path
 
@@ -2575,83 +2727,94 @@ class Compiler:
 
         return ret_path
 
-    # --------------------------------
+    # ------------------------------------
     # Methods available from CompilerProxy
 
+    # Methods for Inserting and Importing Files
+
     def insert_file(self, file_path):
+        """
+        Runs the file at the given file_path, importing its commands but not
+            inserting its text into the current document.
+        """
+        file_path = str(file_path)
+        cc = self._curr_context()
+        assert cc is not None, 'Cannot insert into a Non-existent Context. This is a Compiler error, report it the people making the compiler.'
+
+        self._insert_file(self._get_near_path(file_path), cc, print_progress=self._print_progress_bars)
+
+    def strict_insert_file(self, file_path):
         """
         Runs the file at the given file path and inserts it into the current
             document.
 
         The file path is assumed to be relative to the current file.
         """
-        cc = self.curr_context()
+        file_path = str(file_path)
+        cc = self._curr_context()
         assert cc is not None, 'Cannot insert into a Non-existent Context. This is a Compiler error, report it the people making the compiler.'
 
         # Actually insert the file
         self._insert_file(self._path_rel_to_file(file_path), cc, print_progress=self._print_progress_bars)
-
-    def near_insert_file(self, file_path):
-        """
-        Runs the file at the given file_path, importing its commands but not
-            inserting its text into the current document.
-        """
-        cc = self.curr_context()
-        assert cc is not None, 'Cannot insert into a Non-existent Context. This is a Compiler error, report it the people making the compiler.'
-
-        self._insert_file(self._get_near_path(file_path), cc, print_progress=self._print_progress_bars)
 
     def far_insert_file(self, file_path):
         """
         Runs the file at the given file_path, importing its commands but not
             inserting its text into the current document.
         """
-        cc = self.curr_context()
+        file_path = str(file_path)
+        cc = self._curr_context()
         assert cc is not None, 'Cannot far insert into a Non-existent Context. This is a Compiler error, report it the people making the compiler.'
 
         self._insert_file(self._get_far_path(file_path), cc, print_progress=self._print_progress_bars)
 
-    def import_file(self, file_path):
+    def strict_import_file(self, file_path):
         """
         Runs the file at the given file_path, importing its commands but not
             inserting its text into the current document.
 
         This file path is assumed to be relative to the main file being run.
         """
-        cc = self.curr_context()
+        file_path = str(file_path)
+        cc = self._curr_context()
         assert cc is not None, 'Cannot import into a Non-existent Context. This is a Compiler error, report it the people making the compiler.'
 
         self._import_file(self._path_rel_to_file(file_path), cc, print_progress=self._print_progress_bars)
+
+    def import_file(self, file_path):
+        """
+        Runs the file at the given file_path, importing its commands but not
+            inserting its text into the current document.
+        """
+        file_path = str(file_path)
+        cc = self._curr_context()
+        assert cc is not None, 'Cannot import into a Non-existent Context. This is a Compiler error, report it the people making the compiler.'
+
+        self._import_file(self._get_near_path(file_path), cc, print_progress=self._print_progress_bars)
 
     def std_import_file(self, file_path):
         """
         Runs the file at the given file_path, importing its commands but not
             inserting its text into the current document.
         """
-        cc = self.curr_context()
+        file_path = str(file_path)
+        cc = self._curr_context()
         assert cc is not None, 'Cannot import into a Non-existent Context. This is a Compiler error, report it the people making the compiler.'
 
         self._import_file(self._path_to_std_file(file_path), cc, print_progress=self._print_progress_bars)
-
-    def near_import_file(self, file_path):
-        """
-        Runs the file at the given file_path, importing its commands but not
-            inserting its text into the current document.
-        """
-        cc = self.curr_context()
-        assert cc is not None, 'Cannot import into a Non-existent Context. This is a Compiler error, report it the people making the compiler.'
-
-        self._import_file(self._get_near_path(file_path), cc, print_progress=self._print_progress_bars)
 
     def far_import_file(self, file_path):
         """
         Runs the file at the given file_path, importing its commands but not
             inserting its text into the current document.
         """
-        cc = self.curr_context()
+        file_path = str(file_path)
+        cc = self._curr_context()
         assert cc is not None, 'Cannot import into a Non-existent Context. This is a Compiler error, report it the people making the compiler.'
 
         self._import_file(self._get_far_path(file_path), cc, print_progress=self._print_progress_bars)
+
+    # Methods for retrieving files and directories for the current file.
 
     def main_file_path(self):
         """
@@ -2664,13 +2827,13 @@ class Compiler:
         Returns an absolute path to the directory that the main file that is
             being run is in.
         """
-        return path.dirname(self._main_file_path())
+        return path.dirname(self.main_file_path())
 
     def curr_file_path(self):
         """
         Returns an absolute path to the current file that is being run.
         """
-        cc = self.curr_context()
+        cc = self._curr_context()
         assert cc is not None, f'The current context was None so the current file path could not be retrieved.'
         return cc.file_path
 
@@ -2679,7 +2842,20 @@ class Compiler:
         Returns an absolute path to the directory that the current file that is
             being run is in.
         """
-        return path.dirname(self._curr_file_path())
+        return path.dirname(self.curr_file_path())
+
+    # Misc Methods
+
+    def placer_class(self):
+        return self._placer_class
+
+    def set_placer_class(self, placer_class):
+        """
+        Sets the placer class that will be used to place the tokens on the PDF.
+            This allows a person to, theoretically, create their own placer in
+            a pdfo file and make the compiler use that instead.
+        """
+        self._placer_class = placer_class
 
 class Command:
     """

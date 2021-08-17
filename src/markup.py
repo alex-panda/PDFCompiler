@@ -14,6 +14,13 @@ class Markup:
 
         self._second_pass_python = []
 
+    def set_paragraph_break(self, boolean):
+        assert_bool(boolean)
+        self._paragraph_break = boolean
+
+    def paragraph_break(self):
+        return self._paragraph_break
+
     def add_callback(self, function):
         """
         Functions that you want to be called when this Markup is reached.

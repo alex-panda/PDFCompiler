@@ -16,25 +16,22 @@ class MarkedUpText(UserString):
     A peice of text that has been marked up so that it has ranges of text
         that are different things such as Bold, Italics, a different Color, etc.
     """
-    def __init__(self, text=None, encoding='utf-8'):
+    def __init__(self, text=None):
         """
         text can be either a str or MarkedUpText. If str, the new MarkedUpText
             will have the text as its text. If MarkedUpText, the new MarkedUpText
             will be a copy of the one given to it.
         """
-        super().__init__(encoding)
 
         if text:
-            if isinstance(text, str):
-                self.data = text
-                self._markups = {}
-            elif isinstance(text, MarkedUpText):
-                self.data = text.data
-                self._markups = copy.deepcopy(text._markups)
+            if isinstance(text, MarkedUpText):
+                super().__init__(text.data)
+                self._markups = copy_markups(text._markups)
             else:
-                raise Exception(f'{self.__class__.__name__} can only take text of type "str" or "MarkedUpText".')
+                super().__init__(str(text))
+                self._markups = {}
         else:
-            self._text = ''
+            super().__init__('')
             self._markups = {}
 
     def add_markup(self, new_markup, start_index=None, end_index=None):
@@ -49,7 +46,7 @@ class MarkedUpText(UserString):
         """
         if start_index is None and end_index is None:
             start_index = 0
-            end_index = len(self._text)
+            end_index = len(self.data)
         elif start_index is None and end_index is not None:
             start_index = end_index
         elif start_index is not None and end_index is None:
@@ -99,13 +96,11 @@ class MarkedUpText(UserString):
     # String methods that needed to be overwritten but are supported
 
     def strip(self, chars=' '):
+        # TODO
         self._unsupported()
 
     def copy(self):
-        text = MarkedUpText()
-        text.data = self.data
-        text._markups = copy_markups(self._markups)
-        return text
+        return MarkedUpText(self)
 
     def clear(self):
         self.data = ''
@@ -113,10 +108,10 @@ class MarkedUpText(UserString):
 
     def join(self, iteratable):
         end_str = MarkedUpText()
-        for i, item in iteratable:
+        for i, item in enumerate(iteratable):
             if i > 0:
-                end_str += self.copy()
-            end_str += f'{item}'
+                end_str += f'{item}'
+            end_str += self.copy()
 
         return end_str
 
@@ -128,9 +123,13 @@ class MarkedUpText(UserString):
 
             self_len = len(new.data)
 
+            # "key" is the index that the list of "Markup" objects is at
             for key, markup in copy_markups(other._markups).items():
                 new_idx = key + self_len
 
+                # Each "markup" is a list of Markup objects but _markups
+                #   is a dict of markups with its keys being the index
+                #   the markups start at
                 if new_idx in new._markups:
                     new._markups[new_idx].extend(markup)
                 else:
@@ -197,6 +196,28 @@ class MarkedUpText(UserString):
             raise Exception(f'{self.__class__.__name__} cannot be multiplied by {other}')
 
         return self
+
+    def __eq__(self, o):
+        """
+        Returns true if this object is equal tot he other object, and False
+            otherwise.
+
+        For the MarkedUpText class, only the data (the actual string that the
+            MarkedUpText is marking up) is compared. This is so that options
+            are easy to do because you can just do
+
+            if marked_up_text == 'command_option_name':
+                ...
+        """
+        if isinstance(o, MarkedUpText) or issubclass(type(o), MarkedUpText):
+            return self.data == o.data
+        elif isinstance(o, str):
+            return self.data == o
+        else:
+            return False
+
+    def __repr__(self):
+        return f'{self.__class__.__name__}(text={self.data})'
 
     # -----------------------------------
     # String methods that are unsupported

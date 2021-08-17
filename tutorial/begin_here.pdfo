@@ -2,7 +2,7 @@
 This is an example file showing off the basics of writing a file that can
 be compiled into a new PDF.
 
-One line of whitespace (as shown in the line above this line) mark the cutoff
+One line of whitespace (as shown in the line above this line) marks the cutoff
 of a paragraph, A.K.A. a paragraph break.
 
 
@@ -67,6 +67,4 @@ Multi-line comment.
 \#-><-%\
 
 That is how comments work, please continue on to "commands.pdfo" to continue...
-
-\title
 

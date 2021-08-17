@@ -76,41 +76,6 @@ if __name__ == "__main__":
 
         end_time = time()
 
-        seconds = end_time - start_time
-        minutes = None
-        hours = None
-        days = None
-        years = None
-
-        if seconds > 60:
-            minutes = seconds // 60
-            seconds -= minutes * float(60)
-
-        if minutes and minutes > 60:
-            hours = minutes // 60
-            minutes %= 60
-
-        if hours and hours > 24:
-            days = hours // 24
-            hours %= 24
-
-        if days and days > 365:
-            years = days // 365
-            days %= 365
-
-        s = f'{OUT_TAB}{OUT_TAB}The full compilation took '
-
-        if years:
-            s += '{:d} Year(s), '.format(int(years))
-        if days:
-            s += '{:d} Day(s), '.format(int(days))
-        if hours:
-            s += '{:d} Hour(s), '.format(int(hours))
-        if minutes:
-            s += '{:d} Minute(s)'.format(int(minutes))
-            s += (', ' if hours else ' ') + 'and '
-        if seconds:
-            s += '{:0.3f} Second(s).'.format(seconds)
-
-        print(s)
+        from tools import time_to_str
+        print(f'{OUT_TAB}{OUT_TAB}The full compilation took {time_to_str(end_time - start_time).lower()}.')
 

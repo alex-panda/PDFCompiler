@@ -69,7 +69,8 @@ class TextInfo:
         return self._font_name
 
     def set_font_name(self, new):
-        assert_instance(new, (TTFont, str), 'font_name')
+        new = str(new)
+        assert_instance(new, str, 'font_name')
         self._font_name = new
 
     def font_size(self):
@@ -179,11 +180,12 @@ class TextInfo:
         # Handle Font nam and Font Size
         fn, fs = self.font_name(), self.font_size()
 
-        if fn is not None or fs is not None:
-            if not (fn is not None and fs is not None):
-                raise AssertionError(f'Either font size or font name was set but the other one was not set. If font size or font name are set, both must be set to a non-None value.\nfont_name: {fn}\nfont_size: {fs}\n')
+        assert not (fn is not None and fs is None), f'The font name was given but the font size was not. Both the Font name'
 
+        if fn is not None and fs is not None:
             canvas.setFont(fn, fs)
+        elif fs is not None:
+            canvas.setFontSize(fs)
 
         # Handle font color
         fc = self.font_color()

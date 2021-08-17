@@ -65,6 +65,28 @@ class ToolBox:
     """
     A toolbox of various useful things like Constants and whatnot
     """
+
+    # ---------------------------------
+    # Provided Classes
+
+    @property
+    @staticmethod
+    def Placer():
+        """
+        An ABC class for writing Placers
+        """
+        from placer import Placer as _Placer
+        return _Placer
+
+    @property
+    @staticmethod
+    def NaivePlacer():
+        """
+        A Naive implementation ofthe Placer class.
+        """
+        from placer import NaivePlacer as _NaivePlacer
+        return _NaivePlacer
+
     # ---------------------------------
     # Constants made available for coders coding in python in their pdfo files
 
@@ -216,4 +238,3 @@ class ToolBox:
         assert isinstance(font_size, (int, float, Decimal)), f'The font_size of the given text_info must be of type int, float, or Decimal, not {font_name}'
 
         return stringWidth(string, font_name, font_size), font_size
-
