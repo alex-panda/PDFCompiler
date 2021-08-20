@@ -1,4 +1,4 @@
-from constants import ALIGNMENT, SCRIPT, STRIKE_THROUGH, UNDERLINE
+from constants import ALIGNMENT, STRIKE_THROUGH, UNDERLINE
 
 def assert_bool(val):
     assert isinstance(val, (bool, None)), f'Can only be True, False, or None. {val} was given instead.'
@@ -10,7 +10,7 @@ class Markup:
     def __init__(self):
         from placer.templates import TextInfo
         self._text_info = TextInfo()
-        self._paragraph_break = None # Only applies to the start of the markup
+        self._paragraph_break = None # applied at MarkupStart
 
         self._second_pass_python = []
 
@@ -28,11 +28,13 @@ class Markup:
         """
         self._callbacks.append(function)
 
-    def markup_start(self):
-        return MarkupStart(self)
-
-    def markup_end(self):
-        return MarkupEnd(self)
+    def markup_start_and_end(self):
+        """
+        Returns starting and ending markup objects for this markup.
+        """
+        me = MarkupEnd(self)
+        ms = MarkupStart(self, me)
+        return ms, me
 
     def copy(self):
         m = Markup()
@@ -69,19 +71,24 @@ class Markup:
 
 
 class MarkupStart:
-    __slots__ = ['markup']
-    def __init__(self, markup):
-        self.markup = markup
+    __slots__ = ['markup', 'markup_end']
+    def __init__(self, markup, markup_end=None):
+        self.markup = markup # A pointer to the Markup object
+        self.markup_end = markup_end # a pointer to the EndMarkup that ends this markup or None if there is no End
 
     def copy(self):
-        return MarkupStart(self.markup)
+        return MarkupStart(self.markup, self.markup_end)
 
 class MarkupEnd:
-    __slots__ = ['markup']
-    def __init__(self, markup):
-        self.markup = markup
+    __slots__ = ['markup', 'undo_text_info']
+    def __init__(self, markup, undo_text_info=None):
+        self.markup = markup # A pointer to the Markup object
+
+        #A copy of the TextInfo object that the PDFDocument was using before
+        #    it was changed to use this Markup's TextInfo.
+        self.undo_text_info = undo_text_info
 
     def copy(self):
-        return MarkupEnd(self.markup)
+        return MarkupEnd(self.markup, self.undo_text_info.copy())
 
 

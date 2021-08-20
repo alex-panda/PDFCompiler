@@ -224,8 +224,8 @@ class NaivePlacer(Placer):
 
         ct = self.curr_template()
         next_word = ct.next_word(peek=False)
-        next_word.set_space_before(space_before)
         next_word.set_text(word)
+        next_word.set_space_before(space_before)
 
         curr_words = [next_word]
         refresh_words = False
@@ -347,11 +347,12 @@ class NaivePlacer(Placer):
         result = None
 
         if tt == TT.PARAGRAPH_BREAK:
+            #self.new_word('<BREAK>', True) # For debug purposes
             self.new_paragraph()
         elif tt == TT.EXEC_PYTH2:
-            result = exec_python(ct.value, self._globals)
+            result = exec_python(ct.value, self._globals, ct.locals)
         elif tt == TT.EVAL_PYTH2:
-            result = eval_python(ct.value, self._globals)
+            result = eval_python(ct.value, self._globals, ct.locals)
         else:
             self.new_word(ct.value, ct.space_before)
 
@@ -367,7 +368,24 @@ class NaivePlacer(Placer):
         """
         The state that is entered when markup is being handled.
         """
-        print('Advanced past Markup')
+        #print('Advanced past Markup')
+        markup = self._current_tok
+
+        if isinstance(markup, MarkupStart):
+            # get the current PDFDocument's default text_info
+            cti = self.curr_template().default().text_info()
+
+            # Now make it easy to undo the changes at the end of the range
+            if markup.markup_end is not None:
+                markup.markup_end.undo_text_info = cti.copy()
+
+            # Actually change the current document's info to what it should be
+            cti.merge(markup.markup.text_info())
+
+        elif isinstance(markup, MarkupEnd):
+            cti = self.curr_template().default().text_info()
+            cti.merge(markup.undo_text_info)
+
         self._advance()
 
     # -----------------
@@ -433,9 +451,9 @@ class NaivePlacer(Placer):
         for word in cpl._pdfwords:
             word._set_parent_paragraph_line(cpl)
 
-        self._curr_paragraph_line = None
-
-        if not replace_with_none:
+        if replace_with_none:
+            self._curr_paragraph_line = None
+        else:
             self.new_paragraph_line()
 
     # Private methods for PDFParagraphLine
@@ -483,21 +501,22 @@ class NaivePlacer(Placer):
 
         elif align == ALIGNMENT.JUSTIFY:
             ppl._curr_alignment = ALIGNMENT.JUSTIFY
-            word_cnt = 1
+            word_cnt = 0
 
             for i, word in enumerate(ppl._pdfwords):
                 if i != 0 and word._space_before:
                     word_cnt += 1
 
-            # Now nudge each word to the right so that they are equally spaced
-            nudge_amt = (ppl.inner_width() - ppl.curr_width()) / word_cnt
+            if word_cnt > 0:
+                # Now nudge each word to the right so that they are equally spaced
+                nudge_amt = (ppl.inner_width() - ppl.curr_width()) / word_cnt
 
-            curr_word_cnt = 0
-            for i, word in enumerate(ppl._pdfwords):
-                if i != 0 and word._space_before:
-                    curr_word_cnt += 1
+                curr_word_cnt = 0
+                for i, word in enumerate(ppl._pdfwords):
+                    if i != 0 and word._space_before:
+                        curr_word_cnt += 1
 
-                word.set_total_offset(word.total_offset() + Point(nudge_amt * curr_word_cnt, 0))
+                    word.set_total_offset(word.total_offset() + Point(nudge_amt * curr_word_cnt, 0))
 
         elif align != ALIGNMENT.LEFT:
             raise AssertionError(f'This PDFParagraphLine was had alignment {align}, which is not a valid alignment.')

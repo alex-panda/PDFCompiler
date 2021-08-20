@@ -23,7 +23,7 @@ def time_to_str(time_in_seconds):
 
     if seconds > 60:
         minutes = seconds // 60
-        seconds -= seconds % 60
+        seconds -= (seconds / 60)
 
     if minutes and minutes > 60:
         hours = minutes // 60
@@ -239,6 +239,7 @@ def exec_python(code, exec_globals:dict, exec_locals:dict=None):
     Executes python code and returns the value stored in 'ret' if it was
         specified as a global variable.
     """
+    from marked_up_text import MarkedUpText
     try:
         exec(code, exec_globals, exec_locals)
     except Exception as e:
@@ -247,17 +248,23 @@ def exec_python(code, exec_globals:dict, exec_locals:dict=None):
         return e
 
     if 'ret' in exec_globals:
-        return str(exec_globals.pop('ret'))
+        res = exec_globals.pop('ret')
     elif exec_locals and 'ret' in exec_locals:
-        return str(exec_locals.pop('ret'))
+        res = exec_locals.pop('ret')
     else:
         return None
+
+    if isinstance(res, MarkedUpText):
+        return res
+    else:
+        return str(res)
 
 
 def eval_python(code:str, eval_globals:dict, eval_locals:dict=None):
     """
     Avaluates Python and returns a string of the output.
     """
+    from marked_up_text import MarkedUpText
     try:
         res = eval(code, eval_globals, eval_locals)
     except Exception as e:
@@ -265,7 +272,10 @@ def eval_python(code:str, eval_globals:dict, eval_locals:dict=None):
         e.exc_trace = traceback.format_exc()
         return e
 
-    return str(res)
+    if isinstance(res, MarkedUpText):
+        return res
+    else:
+        return str(res)
 
 
 def string_with_arrows(text, pos_start, pos_end):

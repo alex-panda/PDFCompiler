@@ -18,7 +18,7 @@ class Enum(str, Enum):
         from marked_up_text import MarkedUpText
         from tools import trimmed
         val = obj
-        if isinstance(obj, (str, cls)) and trimmed(obj.lower()) in cls.values():
+        if isinstance(obj, (str, cls)) and (trimmed(obj.lower()) in cls.values()):
             return trimmed(obj.lower())
         elif isinstance(obj, MarkedUpText) and trimmed(obj._text.lower()) in cls.values():
             return trimmed(obj._text.lower())
@@ -164,6 +164,49 @@ PB_NUM_TABS = 1 # Number of tabs before the printed value
 # What tabs should be when being printed to the command line
 OUT_TAB = 6 * ' '
 
+class FontFamily:
+    __slots__ = ['norm', 'bold', 'italics', 'bold_italics']
+    def __init__(self, norm_font_name, bold_font_name, italics_font_name, bold_italics_font_name):
+        self.norm = norm_font_name
+        self.bold = bold_font_name
+        self.italics = italics_font_name
+        self.bold_italics = bold_italics_font_name
+
+    def font(self, bold:bool, italics:bool):
+        """
+        Returns the font name for the font that corresponds to the given
+            combination of bold and italics.
+        """
+        if bold and italics:
+            return self.bold_italics
+        elif bold:
+            return self.bold
+        elif italics:
+            return self.italics
+        else:
+            return self.norm
+
+FONT_FAMILIES = {
+    'Times': FontFamily('Times-Roman', 'Times-Bold', 'Times-Italic', 'Times-BoldItalic'),
+    'Courier': FontFamily('Courier', 'Courier-Bold', 'Courier-Oblique', 'Courier-BoldOblique'),
+    'Helvetica': FontFamily('Helvetica', 'Helvetica-Bold', 'Helvetica-Oblique', 'Helvetica-BoldOblique'),
+    'Symbol': FontFamily('Symbol', 'Symbol', 'Symbol', 'Symbol'),
+    'ZapfDingbats': FontFamily('ZapfDingbats', 'ZapfDingbats', 'ZapfDingbats', 'ZapfDingbats')
+}
+
+# The fonts found on the operating system are not always named the same as they
+# were asked for by the user. This Dictionary will save the name the user asked
+# for with the name of the actual font on the system in key:value pairs.
+# This dictionary is specifically for the fonts imported that are not in a font
+# family and are, instead, standalone fonts
+FONT_NAMES = {}
+
+# Registered font names because the ones registered by reportlab are sorted
+#   when you try to retrieve them which is causing errors
+REGISTERED_FONTS = set(['Times-Roman', 'Times-Bold', 'Times-Italic', 'Times-BoldItalic',
+        'Courier', 'Courier-Bold', 'Courier-Oblique', 'Courier-BoldOblique',
+        'Helvetica', 'Helvetica-Bold', 'Helvetica-Oblique', 'Helvetica-BoldOblique',
+        'Symbol', 'ZapfDingbats'])
 
 # -----------------------------------------------------------------------------
 # API Constants (Constants that people compiling their pdf might actually see)
@@ -176,11 +219,6 @@ class ALIGNMENT(Enum):
     CENTER = 'center'
     RIGHT = 'right'
     JUSTIFY = 'justify'
-
-class SCRIPT(Enum):
-    NORMAL = 'normal'
-    SUPER = 'super'
-    SUB = 'sub'
 
 class STRIKE_THROUGH(Enum):
     NONE = 'none'
@@ -195,6 +233,6 @@ class UNDERLINE(Enum):
     THICK = 'thick'
     DOTTED = 'dotted'
     DASHED = 'dashed'
-    DOT_DASHED = 'dot_dashed'
-    DOT_DOT_DASHED = 'dot_dot_dashed'
+    DOT_DASHED = 'dot dashed'
+    DOT_DOT_DASHED = 'dot dot dashed'
 

@@ -1,14 +1,53 @@
 import copy
 from collections import UserString
 from markup import Markup, MarkupStart, MarkupEnd
+from tools import assert_instance
 
 def copy_markups(markups):
-    new_margins = {}
-    for key, markup in markups.items():
-        new_markup = [m.copy() for m in markup]
-        new_margins[key] = new_markup
+    new_marks = {}
 
-    return new_margins
+
+    # A dictionary of MarkupEnds with the keys being their old MarkupEnds that they are a copy of
+    markup_ends = {}
+
+    # A dictionary of Markup starts with the keys being the old MarkupEnds that they are the corresponding copy for
+    markup_starts = {}
+
+    for key, markup_list in markups.items():
+
+        new_markups = []
+        for m in markup_list:
+            if isinstance(m, MarkupStart):
+                if m.markup_end in markup_starts:
+                    new_markups.append(markup_starts.pop(m.markup_end))
+                else:
+                    new_markup = m.markup.copy()
+                    new_markup_end = MarkupEnd(new_markup)
+                    new_markups.append(MarkupStart(new_markup, new_markup_end))
+                    markup_ends[m.markup_end] = new_markup_end
+
+            elif isinstance(m, MarkupEnd):
+                if m in markup_ends:
+                    new_markup_end = markup_ends.pop(m)
+                    new_markup_end.undo_text_info = None if m.undo_text_info is None else m.undo_text_info.copy()
+                    new_markups.append(new_markup_end)
+                else:
+                    new_markup = m.markup.copy()
+                    new_markup_end = MarkupEnd(new_markup)
+                    new_markups.append(new_markup_end)
+
+                    new_markup_start = MarkupStart(new_markup, new_markup_end)
+                    markup_starts[m] = new_markup_start
+
+            else:
+                raise AssertionError(f'This is not a MarkupStart or MarkupEnd yet it was in the Markups for a MarkedUpText object: {m}')
+
+        new_marks[key] = new_markups
+
+    assert len(markup_ends) == 0, f'Not all markup ends were copied, these were not copied: {markup_ends}'
+    assert len(markup_starts) == 0, f'Not all markup starts were copied, these were not copied: {markup_starts}'
+
+    return new_marks
 
 
 class MarkedUpText(UserString):
@@ -34,6 +73,16 @@ class MarkedUpText(UserString):
             super().__init__('')
             self._markups = {}
 
+    def markup(self, start_index=None, end_index=None):
+        """
+        Returns a Markup object that marks up this Text from the start index
+            to the end_index. If both the start and end index are None, then
+            the text contained by this MarkedUpText will be marked up.
+        """
+        m = Markup()
+        self.add_markup(m, start_index, end_index)
+        return m
+
     def add_markup(self, new_markup, start_index=None, end_index=None):
         """
         A method that adds a markup to the MarkedUpText. If both start_index
@@ -42,31 +91,36 @@ class MarkedUpText(UserString):
             and end at that index. If both are specified, then the new_markup
             will start at the start_index and end at the end_index.
 
-        Each markup includes the start_index and excludes the end_index.
+        Each markup starts at the start_index and ends at the end_index and
+            includes them in its range. In other words, if you markup a range
+            from 2-20, 2 and 20 are both included in that range and will be
+            changed according to that markup.
         """
+        assert start_index is None or isinstance(start_index, int), f'The starting index of a markup must be of type int. {start_index} is not an int.'
+        assert end_index is None or isinstance(end_index, int), f'The ending index of a markup must be of type int. {end_index} is not an int.'
+
         if start_index is None and end_index is None:
             start_index = 0
-            end_index = len(self.data)
+            end_index = len(self.data) - 1
         elif start_index is None and end_index is not None:
             start_index = end_index
         elif start_index is not None and end_index is None:
             end_index = start_index
 
-        assert isinstance(start_index, int), f'The starting index of a markup must be of type int. {start_index} is not an int.'
-        assert isinstance(end_index, int), f'The ending index of a markup must be of type int. {end_index} is not an int.'
+        ms, me = new_markup.markup_start_and_end()
 
         # add start markup
         if start_index in self._markups:
-            self._markups[start_index].append(new_markup.markup_start())
+            self._markups[start_index].append(ms)
         else:
-            markups = [new_markup.markup_start()]
+            markups = [ms]
             self._markups[start_index] = markups
 
         # add end markup
         if end_index in self._markups:
-            self._markups[end_index].append(new_markup.markup_end())
+            self._markups[end_index].append(me)
         else:
-            markups = [new_markup.markup_end()]
+            markups = [me]
             self._markups[end_index] = markups
 
     def add_markup_start_or_end(self, markup_start_or_end, index):
@@ -128,8 +182,7 @@ class MarkedUpText(UserString):
                 new_idx = key + self_len
 
                 # Each "markup" is a list of Markup objects but _markups
-                #   is a dict of markups with its keys being the index
-                #   the markups start at
+                #   is a dict of markups in markup_index:[markup_obj, ...] pairs
                 if new_idx in new._markups:
                     new._markups[new_idx].extend(markup)
                 else:
@@ -149,7 +202,7 @@ class MarkedUpText(UserString):
 
         if isinstance(other, int):
             for i in range(other):
-                end_new += self
+                new += self
 
             return new
 
@@ -178,6 +231,7 @@ class MarkedUpText(UserString):
             self.data += other
         else:
             raise Exception(f'{other} cannot be added to {self.__class__.__name__}')
+
 
         return self
 
@@ -215,6 +269,9 @@ class MarkedUpText(UserString):
             return self.data == o
         else:
             return False
+
+    def __nq__(self, o):
+        return not (self == o)
 
     def __repr__(self):
         return f'{self.__class__.__name__}(text={self.data})'

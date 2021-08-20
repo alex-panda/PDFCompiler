@@ -142,15 +142,15 @@ class Token:
     def __init__(self, type, value, start_pos, end_pos=None, space_before=True):
         self.start_pos = start_pos
 
-        if isinstance(space_before, str):
+        if isinstance(space_before, bool):
             # Space before is whether there should be a space before the token
             #   when it is put on the page. This is so that tokens like the
             #   '=' and '{' that are singled out of a sentence can still tell
             #   the placer whether there was space before them because the
             #   default is to just put a space before each token is placed down.
-            self.space_before = (space_before in WHITE_SPACE_CHARS)
-        else:
             self.space_before = space_before
+        else:
+            self.space_before = (space_before in WHITE_SPACE_CHARS)
 
         if end_pos is None:
             end_pos = self.start_pos.copy()
@@ -160,7 +160,7 @@ class Token:
             self.end_pos = end_pos
 
         self.type = type
-        self.value = value
+        self.value = str(value)
 
         if type == TT.WORD and value == '':
             raise Exception(f'An empty string has been made into a Token. This is a compiler problem. {self}')
@@ -171,11 +171,33 @@ class Token:
         """
         return self.type == token_type and self.value == value
 
+    def copy(self):
+        start_pos = None if self.start_pos is None else self.start_pos.copy()
+        end_pos = None if self.end_pos is None else self.end_pos.copy()
+        return Token(self.type, self.value, start_pos, end_pos, self.space_before)
+
+    def gen_pass_2_python(self, locals):
+        """
+        Generates a SecondPassPythonToken that can store the locals
+            that should be provided when the python code is run in the Placer.
+            The Placer already has the globals that should be provided.
+        """
+        start_pos = None if self.start_pos is None else self.start_pos.copy()
+        end_pos = None if self.end_pos is None else self.end_pos.copy()
+        return SecondPassPythonToken(self.type, self.value, start_pos, end_pos, self.space_before, locals)
+
     def __repr__(self):
         """
         This is what is called when you print this object since __str__ is undefined.
         """
-        return f'Token("<{self.type}>":{self.space_before} {self.value})'
+        return f"Token(\"<{self.type}>\":{' ' if self.space_before else ''}{self.value})"
+
+class SecondPassPythonToken(Token):
+    __slots__ = Token.__slots__[:]
+    __slots__.extend(['locals'])
+    def __init__(self, type, value, start_pos, end_pos=None, space_before=False, locals=None):
+        super().__init__(type, value, start_pos, end_pos, space_before)
+        self.locals = locals
 
 # -----------------------------------------------------------------------------
 # Tokenizer Class
@@ -198,7 +220,7 @@ class Tokenizer:
 
         self._text = file_text
         self._current_char = None
-        self._previous_char = None
+        self._previous_char = ''
         self._plain_text = ''
         self._plain_text_start_pos = None
         self._space_before_plaintext = False
@@ -216,12 +238,16 @@ class Tokenizer:
             self._current_char = self._text[self._pos.idx] if self._pos.idx < len(self._text) else None
 
     @staticmethod
-    def plaintext_tokens_for_str(string):
+    def plaintext_tokens_for_str(string, count_starting_space=False):
         """
         If you want to write plaintext to the placer and the string to be
             interpreted only as plaintext, then this is what you use to
             tokenize the string. Just take the return-ed string from this
             method and give it to the place_text method of the Placer.
+
+        If count_starting_space is True, then it will treat the whitespace
+            before the first letter as actual space that could produce
+            a paragraph break
         """
         tokens = []
         idx = -1
@@ -231,24 +257,27 @@ class Tokenizer:
             idx += 1
             return string[idx] if idx < len(string) else None, idx
 
-        def try_append_word(curr_word):
+        def try_append_word(curr_word, space_before):
             curr_word = re.sub('(\s)+', '', curr_word)
             if len(curr_word) > 0:
-                tokens.append(Token(TT.WORD, curr_word, DUMMY_POSITION.copy()))
+                tokens.append(Token(TT.WORD, curr_word, DUMMY_POSITION.copy(), space_before=space_before))
 
         cc, idx = next_tok(idx)
 
-        # Eat all end line chars at beginning so no paragraph break at beginning
-        while (cc is not None) and (cc in END_LINE_CHARS):
-            cc, idx, = next_tok(idx)
+        if not count_starting_space:
+            # Eat all end line chars at beginning so no paragraph break at beginning
+            while (cc is not None) and (cc in END_LINE_CHARS):
+                cc, idx, = next_tok(idx)
 
+        space_before = False
         curr_word = ''
         while cc is not None:
             if cc in NON_END_LINE_CHARS:
                 cc, idx = next_tok(idx)
 
-                try_append_word(curr_word)
+                try_append_word(curr_word, space_before)
                 curr_word = ''
+                space_before = True
 
                 while (cc is not None) and (cc in NON_END_LINE_CHARS):
                     cc, idx, = next_tok(idx)
@@ -258,8 +287,9 @@ class Tokenizer:
             elif cc in END_LINE_CHARS:
                 cc, idx = next_tok(idx)
 
-                try_append_word(curr_word)
+                try_append_word(curr_word, space_before)
                 curr_word = ''
+                space_before = True
 
                 if cc in END_LINE_CHARS:
                     tokens.append(Token(TT.PARAGRAPH_BREAK, TT.PARAGRAPH_BREAK, DUMMY_POSITION.copy()))
@@ -273,7 +303,7 @@ class Tokenizer:
                 curr_word += cc
                 cc, idx = next_tok(idx)
 
-        try_append_word(curr_word)
+        try_append_word(curr_word, space_before)
 
         return tokens
 
@@ -315,22 +345,35 @@ class Tokenizer:
         """
         token_list = []
         token_value = ''
+        pending_end_markups = []
 
-        for i, char in marked_up_text:
+        for i, char in enumerate(marked_up_text):
             markups = marked_up_text.markups_for_index(i)
             # markups is a list of MarkupStart and MarkupEnd objects or
             #   None if there are None
 
-            if markups:
+            if markups or pending_end_markups:
                 if len(token_value) > 0:
-                    space_before = token_value[0] in WHITE_SPACE_CHARS
-                else:
-                    space_before = False
+                    space_before = (token_value[0] in WHITE_SPACE_CHARS)
+                    tokens = Tokenizer.plaintext_tokens_for_str(str(token_value), True)
+                    token_value = ''
 
-                token_list.append(Token(TT.WORD, trimmed(token_value), DUMMY_POSITION.copy(), space_before=space_before))
+                    if len(tokens) > 0:
+                        tokens[0].space_before = space_before
+                        token_list.extend(tokens)
 
-                for markup in markups:
-                    token_list.append(markup)
+                if pending_end_markups:
+                    for markup in pending_end_markups:
+                        token_list.append(markup)
+
+                    pending_end_markups = []
+
+                if markups:
+                    for markup in markups:
+                        if isinstance(markup, MarkupStart):
+                            token_list.append(markup)
+                        else:
+                            pending_end_markups.append(markup)
 
             token_value += char
 
@@ -2033,10 +2076,10 @@ class Interpreter:
         # For second pass python, it needs to be kept until we are actually
         #   placing the text on the PDF, then the Placer will be made available
         #   to the python and the code can make changes to the PDF
-        elif tt == TT.EXEC_PYTH2:
-            python_result = [python_token]
-        elif tt == TT.EVAL_PYTH2:
-            python_result = [python_token]
+        elif tt in (TT.EXEC_PYTH2, TT.EVAL_PYTH2):
+            python_result = [python_token.gen_pass_2_python( \
+                    None if context.locals() is None else \
+                        {key:val for key, val in context.locals().items()})]
         else:
             raise Exception(f"The following token was found in a PythonNode, it is not supposed to be in a PythonNode: {tt}")
 
@@ -2189,6 +2232,9 @@ class Interpreter:
                 if res.error:
                     return res
 
+                if marked_up_text == '<NONE>':
+                    marked_up_text = None
+
                 # Assign each python local to its marked_up_text
                 py_locals[key] = marked_up_text
 
@@ -2215,10 +2261,10 @@ class Interpreter:
 
         self._pop_command_node()
 
-        if len(result) > 0:
+        if len(tokens) > 0:
             # Find the first Token and set space_before to True if the
             #   command call had space_before = True, otherwise set it False
-            for token in result:
+            for token in tokens:
                 if isinstance(token, Token):
                     token.space_before = node.cmnd_name.space_before
                     break
@@ -2346,7 +2392,7 @@ class Compiler:
         self._std_dir_path = path_to_std_dir
         self._print_progress_bars = print_progess_bars
 
-        self._toolbox = ToolBox()
+        self._toolbox = ToolBox(self)
         self._compiler_poxy = CompilerProxy(self)
 
         self._placer_class = NaivePlacer
@@ -2358,7 +2404,7 @@ class Compiler:
         self._globals = {'__name__': __name__, '__doc__': None, '__package__': None,
             '__loader__': __loader__, '__spec__': None, '__annotations__': None,
             '__builtins__': _copy.deepcopy(globals()['__builtins__']),
-            'compiler':self._compiler_poxy, 'toolbox':ToolBox}
+            'compiler':self._compiler_poxy, 'toolbox':self._toolbox}
 
         #   remove any problematic builtins from the globals
         rem_builtins = []

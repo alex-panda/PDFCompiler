@@ -6,7 +6,7 @@ from reportlab.lib.colors import HexColor, Color, CMYKColor
 
 from tools import assure_decimal, assert_instance, assert_subclass, draw_str
 from tools import prog_bar_prefix, print_progress_bar, calc_prog_bar_refresh_rate
-from constants import TT, ALIGNMENT, ALIGNMENT, SCRIPT, STRIKE_THROUGH, UNDERLINE
+from constants import TT, ALIGNMENT, ALIGNMENT, STRIKE_THROUGH, UNDERLINE, FONT_FAMILIES, FONT_NAMES
 
 from shapes import Point, Rectangle
 
@@ -46,8 +46,9 @@ class TextInfo:
         return self._script
 
     def set_script(self, new):
-        assert_instance(new, SCRIPT, 'script')
+        assert_instance(new, int, 'script')
         self._script = new
+        return self
 
     def alignment(self):
         return self._alignment
@@ -55,6 +56,7 @@ class TextInfo:
     def set_alignment(self, new):
         assert_instance(new, ALIGNMENT, 'alignment')
         self._alignment = new
+        return self
 
     def line_spacing(self):
         return self._line_spacing
@@ -62,16 +64,39 @@ class TextInfo:
     def set_line_spacing(self, new):
         assert_instance(new, (int, Decimal, float), 'line_spacing')
         self._line_spacing = assure_decimal(new)
+        return self
 
     # ---------
 
+    def working_font_name(self):
+        """
+        The font name that is actually given to the canvas based on what the
+            current font_name, bold, and italics are
+        """
+        fn = self.font_name()
+
+        if fn in FONT_FAMILIES:
+            fn = FONT_FAMILIES[fn].font(self.bold(), self.italics())
+        elif fn in FONT_NAMES:
+            fn = FONT_NAMES[fn]
+        return fn
+
     def font_name(self):
+        """
+        Returns the current font_name that this TextInfo is using. If it is
+            set to the name of a FontFamily, then the font family's name
+            is returned by this method. If you want the name of the font that
+            will be passed to the canvas in that case, then use the
+            working_font_name method.
+        """
         return self._font_name
 
     def set_font_name(self, new):
-        new = str(new)
+        if isinstance(new, bytes):
+            new = new.decode('utf-8')
         assert_instance(new, str, 'font_name')
         self._font_name = new
+        return self
 
     def font_size(self):
         return self._font_size
@@ -79,6 +104,7 @@ class TextInfo:
     def set_font_size(self, new):
         assert_instance(new, (int, float, Decimal), 'font_size')
         self._font_size = new
+        return self
 
     def font_color(self):
         return self._font_color
@@ -86,6 +112,7 @@ class TextInfo:
     def set_font_color(self, new):
         assert_instance(new, (Color, CMYKColor), 'font_color')
         self._font_color = new
+        return self
 
     def font_color_gray(self):
         return self._font_color_gray
@@ -95,6 +122,7 @@ class TextInfo:
         if new is not None:
             assert 0.0 <= new <= 1.0, f'font_color_gray must be between 0 and 1 inclusive, not {new}'
         self._font_color_gray = new
+        return self
 
     def font_color_alpha(self):
         return self._font_color_alpha
@@ -104,6 +132,7 @@ class TextInfo:
         if new is not None:
             assert 0.0 <= new <= 1.0, f'font_color_alpha must be between 0 and 1 inclusive, not {new}'
         self._font_color_alpha = new
+        return self
 
     def font_highlight_color(self):
         return self._font_highlight_color
@@ -111,6 +140,7 @@ class TextInfo:
     def set_font_highlight_color(self, new):
         assert_instance(new, (Color, CMYKColor), 'font_highlight_color')
         self._font_highlight_color = new
+        return self
 
     # ---------
 
@@ -120,13 +150,15 @@ class TextInfo:
     def set_underline(self, new):
         assert_instance(new, UNDERLINE, 'underline')
         self._underline = new
+        return self
 
-    def font_strikethrough(self):
+    def strikethrough(self):
         return self._strikethrough
 
     def set_strikethrough(self, new):
         assert_instance(new, STRIKE_THROUGH, 'font_strikethrough')
         self._strikethrough = new
+        return self
 
     # ---------
 
@@ -136,6 +168,7 @@ class TextInfo:
     def set_bold(self, boolean):
         assert_instance(boolean, bool, 'bold')
         self._bold = boolean
+        return self
 
     def italics(self):
         return self._italics
@@ -143,6 +176,7 @@ class TextInfo:
     def set_italics(self, boolean):
         assert_instance(boolean, bool, 'italics')
         self._italics = boolean
+        return self
 
     def can_split_words(self):
         return self._can_split_words
@@ -150,6 +184,7 @@ class TextInfo:
     def set_can_split_words(self, boolean):
         assert_instance(boolean, bool, 'can_split_words')
         self._can_split_words = boolean
+        return self
 
     # --------------------------
     # Non-getter-setter Methods
@@ -176,9 +211,17 @@ class TextInfo:
         for atr in self.__slots__:
             setattr(self, atr, None)
 
+    def apply_to_placer(self, placer):
+        """
+        Apply to the Placer what can be applied.
+        """
+
     def apply_to_canvas(self, canvas):
+        """
+        Apply what can be applied to the canvas.
+        """
         # Handle Font nam and Font Size
-        fn, fs = self.font_name(), self.font_size()
+        fn, fs = self.working_font_name(), self.font_size()
 
         assert not (fn is not None and fs is None), f'The font name was given but the font size was not. Both the Font name'
 
@@ -878,16 +921,14 @@ class PDFParagraphLine(PDFComponent):
         if len(self._pdfwords) > 1:
             prev_word = self._pdfwords[-2]
             self._curr_width -= prev_word.total_width()
-            prev_word._space_after = word.space_before()
-            prev_word.calc_dims()
+            prev_word._set_space_after(word.space_before())
             self._curr_width += prev_word.total_width()
 
             th = prev_word.total_height()
             if self._curr_height < th:
                 self._curr_height = th
 
-        word._space_after = False
-        word.calc_dims()
+        word._set_space_after(False)
         self._curr_width += word.total_width()
 
         th = word.total_height()
@@ -900,8 +941,7 @@ class PDFParagraphLine(PDFComponent):
         """
         if len(self._pdfwords) >= 2:
             prev_word = self._pdfwords[-2]
-            prev_word._space_after = False
-            prev_word.calc_dims()
+            prev_word._set_space_after(False)
 
         word = self._pdfwords.pop()
 
@@ -914,7 +954,9 @@ class PDFParagraphLine(PDFComponent):
         for pdfword in self._pdfwords:
             width += pdfword.total_width()
             th = pdfword.total_height()
-            height = height if height > th else th
+
+            if height > th:
+                height = th
 
         self._curr_width = width
         self._curr_height = height
@@ -931,17 +973,8 @@ class PDFParagraphLine(PDFComponent):
             words will be realigned later anyway, probably not to the alignment
             you want to realign it to.
         """
-        from placer.placer import Placer
-        Placer._place_words_on_line(self, new_alignment)
-
-    # TODO: Remove
-    def calc_word_dims(self):
-        """
-        Makes all the words in this line recalculate their dimensions. YOU MUST
-            do this before calling either curr_width or curr_height
-        """
-        for word in self._pdfwords:
-            word.calc_dims()
+        from placer import NaivePlacer
+        NaivePlacer._place_words_on_line(self, new_alignment)
 
     def curr_width(self):
         """
@@ -952,18 +985,6 @@ class PDFParagraphLine(PDFComponent):
             PDFParagraphLine every single time it is run.
         """
         return self._curr_width
-        total_width = 0
-        last_word_idx = len(self._pdfwords) - 1
-
-        for i, word in enumerate(self._pdfwords):
-            if i < last_word_idx and self._pdfwords[i + 1].space_before():
-                word._space_after = True
-            else:
-                word._space_after = False
-
-            total_width += word.total_width()
-
-        return total_width
 
     def curr_height(self):
         """
@@ -974,17 +995,6 @@ class PDFParagraphLine(PDFComponent):
             PDFParagraphLine every single time it is run.
         """
         return self._curr_height
-        height = 0
-
-        for word in self._pdfwords:
-
-            word_height = word.total_height()
-            word_height += word.total_offset().y() - self.total_offset().y()
-
-            if word_height > height:
-                height = word_height
-
-        return height
 
     def draw(self, canvas):
         line_height = self.inner_height()
@@ -1007,12 +1017,19 @@ class PDFInlineObject(PDFComponent):
     A base class for objects that can be added to a PDFParagraphLine
     """
     __slots__ = PDFComponent.__slots__[:]
-    __slots__.extend(['_space_before', '_space_after'])
+    __slots__.extend(['_space_before', '__space_after',
+        '_width_with_space', '_width_without_space',
+        '_height_with_space', '_height_without_space'])
 
     def __init__(self):
         super().__init__()
-        self._space_before = True
-        self._space_after = False # set by PDFParagraphLine when there should be a space after this word dependant on the space_before attribute of the next word.
+        self._space_before = False
+        self.__space_after = False
+
+        self._width_with_space = 0
+        self._width_without_space = 0
+        self._height_with_space = 0
+        self._height_without_space = 0
 
     def set_space_before(self, boolean):
         """
@@ -1022,11 +1039,24 @@ class PDFInlineObject(PDFComponent):
         assert_instance(boolean, bool, 'boolean', or_none=False)
         self._space_before = boolean
 
-    def calc_dims(self):
+    def _set_space_after(self, boolean):
+        self.__space_after = boolean
+        self.set_inner_size(self.curr_width(), self.curr_height())
+
+    def _space_after(self):
+        return self.__space_after
+
+    def curr_width(self):
         """
-        Calculates the dimensions of the object, if needed
+        Returns the current width of the inline object.
+
+        If self._space_after is True, then the width of this object with a space after
+            it is returned, the inner width is used otherwise.
         """
-        pass
+        raise NotImplementedError()
+
+    def curr_height(self):
+        raise NotImplementedError()
 
     def space_before(self):
         return self._space_before
@@ -1052,23 +1082,27 @@ class PDFWord(PDFInlineObject):
         Returns the Text that this word contains. If space_after is true, then
             a space will be appended to the text that is returned.
         """
-        if self._space_after:
-            return self._text + ' '
-        else:
-            return self._text
+        return self._text + ' ' if self._space_after() else self._text
 
     def set_text(self, text):
+        """
+        Sets the text of this PDFWord. If calc_dims is True, then it also
+            automatically calculates the dimensions of the text with and without
+            a space.
+        """
         self._text = text
 
-    def calc_dims(self):
-        """
-        Calculate the dimensions of this word with its current TextInfo.
+        self._width_with_space, self._height_with_space = \
+                ToolBox.string_size(text + ' ', self.text_info())
 
-        space_after must be set to True if you want the space after the word to
-            be taken into account when this method calculates the dimensions of
-            this PDFWord
-        """
-        self.set_inner_size(ToolBox.string_size(self.text(), self.text_info()))
+        self._width_without_space, self._height_without_space = \
+                ToolBox.string_size(text, self.text_info())
+
+    def curr_width(self):
+        return self._width_with_space if self._space_after() else self._width_without_space
+
+    def curr_height(self):
+        return self._height_with_space if self._space_after() else self._height_without_space
 
     def draw(self, canvas, line_height=None):
         """
@@ -1297,12 +1331,12 @@ class PDFDocumentTemplate(Template):
 
         # Set Defaults for text on the pages
         t = default.text_info()
-        t.set_script(SCRIPT.NORMAL)
+        t.set_script(0)
         t.set_alignment(ALIGNMENT.LEFT)
 
-        t.set_font_name('Times-Roman')
+        t.set_font_name('Times')
         t.set_font_size(12)
-        t.set_font_color(ToolBox.colors().black)
+        t.set_font_color(ToolBox.COLORS.black)
         t.set_font_color_gray(None)
         t.set_font_color_alpha(1)
         t.set_font_highlight_color(None)
@@ -1403,7 +1437,7 @@ class PDFPageTemplate(Template):
 
         # Set Defaults for Pages
         default.set_margins(1*inch, 1*inch, 1*inch, 1*inch)
-        default.set_page_size(ToolBox.page_sizes().A4)
+        default.set_page_size(ToolBox.PAGE_SIZES.A4)
         default.set_grid(1, 1)
 
         super().__init__(default, PDFColumnTemplate())
