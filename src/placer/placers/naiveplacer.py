@@ -377,14 +377,14 @@ class NaivePlacer(Placer):
 
             # Now make it easy to undo the changes at the end of the range
             if markup.markup_end is not None:
-                markup.markup_end.undo_text_info = cti.copy()
+                markup.markup_end.undo_dict = cti.gen_undo_dict(markup.markup.text_info())
 
             # Actually change the current document's info to what it should be
             cti.merge(markup.markup.text_info())
 
         elif isinstance(markup, MarkupEnd):
             cti = self.curr_template().default().text_info()
-            cti.merge(markup.undo_text_info)
+            cti.undo(markup.undo_dict)
 
         self._advance()
 
@@ -601,21 +601,22 @@ class NaivePlacer(Placer):
         """
         Creates the PDFColumn objects for this PDFPage.
         """
-        assert len(pdf_page._col_rects) == 0, f'The columns for this page have already been created. Number of PDFColumns: {len(self._cols)}'
-        assert pdf_page._num_rows >= 0 and pdf_page._num_cols >= 0, f'The numbers of columns and rows for a PDFPage must both be atleast 0. They are (row_count, column_count): ({self._num_rows}, {self._num_cols})'
+        assert len(pdf_page._col_rects) == 0, f'The columns for this page have already been created. Number of PDFColumns: {len(pdf_page._col_rects)}'
+        assert pdf_page.num_rows() >= 0 and pdf_page.num_cols() >= 0, f'The numbers of columns and rows for a PDFPage must both be atleast 0. They are (row_count, column_count): ({pdf_page._num_rows}, {pdf_page._num_cols})'
 
-        if pdf_page._num_rows == 0 or pdf_page._num_cols == 0:
+        if pdf_page.num_rows() == 0 or pdf_page.num_cols() == 0:
             # No need to create any Column objects whatsoever
             return
 
-        curr_x_offset, curr_y_offset = pdf_page.inner_offset().xy()
-        col_width = pdf_page.inner_width() / pdf_page._num_cols
-        col_height = pdf_page.inner_height() / pdf_page._num_rows
+        curr_x_offset, curr_y_offset = starting_x, starting_y = pdf_page.inner_offset().xy()
+        col_width = pdf_page.inner_width() / pdf_page.num_cols()
+        col_height = pdf_page.inner_height() / pdf_page.num_rows()
 
         fill_rows_first = pdf_page.fill_rows_first()
+        #print(f'{pdf_page.num_rows()} * {pdf_page.num_cols()} = {pdf_page.num_rows() * pdf_page.num_cols()}')
 
         # create the Column objects and place them on the page.
-        for i in range(pdf_page._num_rows * pdf_page._num_cols):
+        for i in range(pdf_page.num_rows() * pdf_page.num_cols()):
             # Create new column
             next_col = Rectangle()
 
@@ -631,9 +632,9 @@ class NaivePlacer(Placer):
                 curr_x_offset += col_width
 
                 # If have reached the last column, start next row
-                if ((i + 1) % pdf_page._num_cols) == 0:
+                if ((i + 1) % pdf_page.num_cols()) == 0:
                     curr_y_offset += col_height
-                    curr_x_offset = 0
+                    curr_x_offset = starting_x
 
             else:
                 curr_y_offset += col_height
@@ -641,6 +642,6 @@ class NaivePlacer(Placer):
                 # If have reached last column (not Column object but the last
                 #   column of the grid of Column objects) then start next
                 #   column
-                if ((i + 1) % pdf_page._num_rows) == 0:
+                if ((i + 1) % pdf_page.num_rows()) == 0:
                     curr_x_offset += col_width
-                    curr_y_offset = 0
+                    curr_y_offset = starting_y

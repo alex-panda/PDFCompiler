@@ -29,7 +29,7 @@ def copy_markups(markups):
             elif isinstance(m, MarkupEnd):
                 if m in markup_ends:
                     new_markup_end = markup_ends.pop(m)
-                    new_markup_end.undo_text_info = None if m.undo_text_info is None else m.undo_text_info.copy()
+                    new_markup_end.undo_dict = None if m.undo_dict is None else m.undo_dict.copy()
                     new_markups.append(new_markup_end)
                 else:
                     new_markup = m.markup.copy()
@@ -101,7 +101,7 @@ class MarkedUpText(UserString):
 
         if start_index is None and end_index is None:
             start_index = 0
-            end_index = len(self.data) - 1
+            end_index = 0 if len(self.data) == 0 else len(self.data) - 1
         elif start_index is None and end_index is not None:
             start_index = end_index
         elif start_index is not None and end_index is None:
@@ -110,18 +110,18 @@ class MarkedUpText(UserString):
         ms, me = new_markup.markup_start_and_end()
 
         # add start markup
+        # Must insert it at first position to make sure that the order of them
+        #   is a mirror image of the MarkupEnds
         if start_index in self._markups:
-            self._markups[start_index].append(ms)
+            self._markups[start_index].insert(0, ms)
         else:
-            markups = [ms]
-            self._markups[start_index] = markups
+            self._markups[start_index] = [ms]
 
         # add end markup
         if end_index in self._markups:
             self._markups[end_index].append(me)
         else:
-            markups = [me]
-            self._markups[end_index] = markups
+            self._markups[end_index] = [me]
 
     def add_markup_start_or_end(self, markup_start_or_end, index):
         """

@@ -80,15 +80,16 @@ class MarkupStart:
         return MarkupStart(self.markup, self.markup_end)
 
 class MarkupEnd:
-    __slots__ = ['markup', 'undo_text_info']
-    def __init__(self, markup, undo_text_info=None):
+    __slots__ = ['markup', 'undo_dict']
+    def __init__(self, markup, undo_dict=None):
         self.markup = markup # A pointer to the Markup object
 
-        #A copy of the TextInfo object that the PDFDocument was using before
-        #    it was changed to use this Markup's TextInfo.
-        self.undo_text_info = undo_text_info
+        # A dictionary containing all the attributes that were changed and what
+        #   they attributes were changed from when the current document TextInfo
+        #   was changed.
+        self.undo_dict = undo_dict
 
     def copy(self):
-        return MarkupEnd(self.markup, self.undo_text_info.copy())
+        return MarkupEnd(self.markup, self.undo_dict.copy())
 
 

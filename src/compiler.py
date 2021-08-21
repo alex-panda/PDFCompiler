@@ -312,17 +312,19 @@ class Tokenizer:
         """
         Returns a MarkedUpText object that is equivalent to the List of Tokens given.
         """
+
         text = MarkedUpText()
         curr_index = 0
+        pending_markups = []
 
         for t in list_of_tokens:
             if isinstance(t, (MarkupStart, MarkupEnd)):
                 text.add_markup_start_or_end(t, curr_index)
             elif isinstance(t, Token):
                 if t.type == TT.PARAGRAPH_BREAK:
-                    markup = Markup()
-                    markup.set_paragraph_break(True)
-                    text.add_markup(markup, curr_index)
+                    # Add two newlines to signify a paragraph break
+                    text += '\n\n'
+                    curr_index += 2
                 elif t.type in (TT.EXEC_PYTH2, TT.EVAL_PYTH2):
                     markup = Markup()
                     markup.add_python(t)
@@ -334,7 +336,20 @@ class Tokenizer:
                     text += t.value
                     curr_index += len(t.value)
             else:
-                Exception(f'{t} was in the list of tokens given to be changed into MarkedUpText, but MarkedUpText can\'t properly denote it.')
+                raise Exception(f'{t} was in the list of tokens given to be changed into MarkedUpText, but MarkedUpText can\'t denote it. This is a compiler problem, tell the makers of the compiler that you got this error.')
+
+        text_len = len(text)
+        #print(f'curr_index = {curr_index}, text_len = {text_len}, markups = {None if text_len not in text._markups else text._markups[text_len]}')
+        if text_len > 0 and text_len in text._markups:
+            markups = text._markups.pop(text_len)
+
+            index = text_len - 1
+            if index in text._markups:
+                text._markups[index].extend(markups)
+            else:
+                text._markups[index] = markups
+
+            #print(f'AFTER markups = {None if index not in text._markups else text._markups[index]}')
 
         return text
 
@@ -343,6 +358,18 @@ class Tokenizer:
         """
         Returns a list of tokens for the given MarkedUpText.
         """
+
+        def try_token(token_value, token_list):
+            if len(token_value) > 0:
+                space_before = (token_value[0] in WHITE_SPACE_CHARS)
+                tokens = Tokenizer.plaintext_tokens_for_str(str(token_value), True)
+                token_value = ''
+
+                if len(tokens) > 0:
+                    tokens[0].space_before = space_before
+                    token_list.extend(tokens)
+            return token_value, token_list
+
         token_list = []
         token_value = ''
         pending_end_markups = []
@@ -352,30 +379,31 @@ class Tokenizer:
             # markups is a list of MarkupStart and MarkupEnd objects or
             #   None if there are None
 
-            if markups or pending_end_markups:
-                if len(token_value) > 0:
-                    space_before = (token_value[0] in WHITE_SPACE_CHARS)
-                    tokens = Tokenizer.plaintext_tokens_for_str(str(token_value), True)
-                    token_value = ''
+            # Since Markups are inclusive of their index, the MarkupStarts must
+            #   be appended before the next char and the MarkupEnds must be
+            #   appended after the next character is added
 
-                    if len(tokens) > 0:
-                        tokens[0].space_before = space_before
-                        token_list.extend(tokens)
+            if markups:
+                token_value, token_list = try_token(token_value, token_list)
 
-                if pending_end_markups:
-                    for markup in pending_end_markups:
+                for markup in markups:
+                    if isinstance(markup, MarkupStart):
                         token_list.append(markup)
-
-                    pending_end_markups = []
-
-                if markups:
-                    for markup in markups:
-                        if isinstance(markup, MarkupStart):
-                            token_list.append(markup)
-                        else:
-                            pending_end_markups.append(markup)
+                    else:
+                        pending_end_markups.append(markup)
 
             token_value += char
+
+            if pending_end_markups:
+
+                token_value, token_list = try_token(token_value, token_list)
+
+                for markup in pending_end_markups:
+                    token_list.append(markup)
+
+                pending_end_markups = []
+
+        token_value, token_list = try_token(token_value, token_list)
 
         return token_list
 
