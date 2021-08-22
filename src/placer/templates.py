@@ -1345,7 +1345,7 @@ class Template:
     def reset_state(self, recursively=True):
         self._state_index = -1
 
-        if recursively and self.child_template():
+        if recursively and self._reset_children_on_next and self.child_template():
             self.child_template().reset_state()
 
 class PDFDocumentTemplate(Template):
@@ -1359,7 +1359,7 @@ class PDFDocumentTemplate(Template):
 
         t.set_font_name('Times')
         t.set_font_size(12)
-        t.set_font_color(ToolBox.COLORS.black)
+        t.set_font_color(ToolBox.COLOR.BLACK)
         t.set_font_color_gray(None)
         t.set_font_color_alpha(1)
         t.set_font_highlight_color(None)
@@ -1460,7 +1460,7 @@ class PDFPageTemplate(Template):
 
         # Set Defaults for Pages
         default.set_margins(1*inch, 1*inch, 1*inch, 1 * inch)
-        default.set_page_size(ToolBox.PAGE_SIZES.A4)
+        default.set_page_size(ToolBox.PAGE_SIZE.A4)
         default.set_grid(1, 1)
 
         super().__init__(default, PDFColumnTemplate())
@@ -1507,7 +1507,6 @@ class PDFParagraphLineTemplate(Template):
             if par_line.text_info().alignment() == ALIGNMENT.LEFT:
                 par_line.set_left_margin(0.5 * inch)
 
-        first_line.text_info().set_font_color(ToolBox.COLORS.red)
         first_line.add_on_creation_callback(tab_callback)
         self.add_concrete(first_line)
 

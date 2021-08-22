@@ -407,6 +407,7 @@ class Tokenizer:
 
         return token_list
 
+    _what_can_be_escaped = {'{', '}', '=', '\\', '(', ')', ','}
     def tokenize(self, file=True):
         """
         Turn the raw text into tokens that the compiler can use.
@@ -416,7 +417,7 @@ class Tokenizer:
         """
         self._tokens = []
         self._plain_text = ''
-        what_can_be_escaped = {'{', '}', '=', '\\', '(', ')', ','}
+        what_can_be_escaped = self._what_can_be_escaped
 
         if file:
             self._tokens.append(Token(TT.FILE_START, '<FILE START>', self._pos.copy()))
@@ -546,19 +547,19 @@ class Tokenizer:
 
         pos_start = self._pos.copy()
 
-        # Note, Multi-line matches tend be longer and so need to come before
+        # NOTE: Multi-line matches tend be longer and so need to come before
         #   single-line matches because shorter matches will match before longer
         #   matches, even if the longer match would have worked had it been tried
 
         # Multiple Line Python ----------------------
         if self._match(TT_M.MULTI_LINE_PYTH_1PASS_EXEC_START):
-            t = self._tokenize_python(TT_M.MULTI_LINE_PYTH_1PASS_EXEC_END, 1, pos_start, )
+            t = self._tokenize_python(TT_M.MULTI_LINE_PYTH_1PASS_EXEC_END, 1, pos_start)
 
         elif self._match(TT_M.MULTI_LINE_PYTH_1PASS_EVAL_START):
             t = self._tokenize_python(TT_M.MULTI_LINE_PYTH_1PASS_EVAL_END, 1, pos_start, use_eval=True)
 
         elif self._match(TT_M.MULTI_LINE_PYTH_2PASS_EXEC_START):
-            t = self._tokenize_python(TT_M.MULTI_LINE_PYTH_2PASS_EXEC_END, 2, pos_start, )
+            t = self._tokenize_python(TT_M.MULTI_LINE_PYTH_2PASS_EXEC_END, 2, pos_start)
 
         elif self._match(TT_M.MULTI_LINE_PYTH_2PASS_EVAL_START):
             t = self._tokenize_python(TT_M.MULTI_LINE_PYTH_2PASS_EVAL_END, 2, pos_start, use_eval=True)

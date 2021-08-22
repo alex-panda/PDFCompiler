@@ -110,8 +110,8 @@ class MarkedUpText(UserString):
         ms, me = new_markup.markup_start_and_end()
 
         # add start markup
-        # Must insert it at first position to make sure that the order of them
-        #   is a mirror image of the MarkupEnds
+        # Must insert it at first position to make sure that the order of MarkupStarts
+        #   is a mirror image of their corresponding MarkupEnds
         if start_index in self._markups:
             self._markups[start_index].insert(0, ms)
         else:

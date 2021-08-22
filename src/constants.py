@@ -229,10 +229,103 @@ class UNDERLINE(Enum):
     NONE = 'none'
     SINGLE = 'single'
     DOUBLE = 'double'
-    WAVE = 'wave'
     THICK = 'thick'
+    WAVE = 'wave'
     DOTTED = 'dotted'
     DASHED = 'dashed'
     DOT_DASHED = 'dot dashed'
     DOT_DOT_DASHED = 'dot dot dashed'
 
+class UNIT:
+    INCH = 72.0
+    CM = INCH / 2.54
+    MM = CM * 0.1
+    PICA = 12.0
+
+# Paper sizes from https://en.wikipedia.org/wiki/Paper_size
+PAGE_SIZES_DICT = {
+    "LETTER":          (8.5 * UNIT.INCH, 11 * UNIT.INCH),
+    "LEGAL":           (8.5 * UNIT.INCH, 14 * UNIT.INCH),
+    "ELEVENSEVENTEEN": (11  * UNIT.INCH, 17 * UNIT.INCH),
+
+    "JUNIOR_LEGAL": (5   * UNIT.INCH, 8    * UNIT.INCH),
+    "HALF_LETTER":  (5.5 * UNIT.INCH, 8    * UNIT.INCH),
+    "GOV_LETTER":   (8   * UNIT.INCH, 10.5 * UNIT.INCH),
+    "GOV_LEGAL":    (8.5 * UNIT.INCH, 13   * UNIT.INCH),
+    "TABLOID":      (11  * UNIT.INCH, 17   * UNIT.INCH),
+    "LEDGER":       (17  * UNIT.INCH, 11   * UNIT.INCH),
+
+    "A0":  (841  * UNIT.MM, 1189 * UNIT.MM),
+    "A1":  (594  * UNIT.MM, 841  * UNIT.MM),
+    "A2":  (420  * UNIT.MM, 594  * UNIT.MM),
+    "A3":  (297  * UNIT.MM, 420  * UNIT.MM),
+    "A4":  (210  * UNIT.MM, 297  * UNIT.MM),
+    "A5":  (148  * UNIT.MM, 210  * UNIT.MM),
+    "A6":  (105  * UNIT.MM, 148  * UNIT.MM),
+    "A7":  (74   * UNIT.MM, 105  * UNIT.MM),
+    "A8":  (52   * UNIT.MM, 74   * UNIT.MM),
+    "A9":  (37   * UNIT.MM, 52   * UNIT.MM),
+    "A10": (26   * UNIT.MM, 37   * UNIT.MM),
+    "A11": (18   * UNIT.MM, 26   * UNIT.MM),
+    "A12": (13   * UNIT.MM, 18   * UNIT.MM),
+    "A13": (9    * UNIT.MM, 13   * UNIT.MM),
+
+    "B0":  (1000 * UNIT.MM, 1414 * UNIT.MM),
+    "B1":  (707  * UNIT.MM, 1000 * UNIT.MM),
+    "B2":  (500  * UNIT.MM, 707  * UNIT.MM),
+    "B3":  (353  * UNIT.MM, 500  * UNIT.MM),
+    "B4":  (250  * UNIT.MM, 353  * UNIT.MM),
+    "B5":  (176  * UNIT.MM, 250  * UNIT.MM),
+    "B6":  (125  * UNIT.MM, 176  * UNIT.MM),
+    "B7":  (88   * UNIT.MM, 125  * UNIT.MM),
+    "B8":  (62   * UNIT.MM, 88   * UNIT.MM),
+    "B9":  (44   * UNIT.MM, 62   * UNIT.MM),
+    "B10": (31   * UNIT.MM, 44   * UNIT.MM),
+    "B11": (22   * UNIT.MM, 31   * UNIT.MM),
+    "B12": (15   * UNIT.MM, 22   * UNIT.MM),
+    "B13": (11   * UNIT.MM, 15   * UNIT.MM),
+
+    "C0":  (917 * UNIT.MM, 1297 * UNIT.MM),
+    "C1":  (648 * UNIT.MM, 917  * UNIT.MM),
+    "C2":  (458 * UNIT.MM, 648  * UNIT.MM),
+    "C3":  (324 * UNIT.MM, 458  * UNIT.MM),
+    "C4":  (229 * UNIT.MM, 324  * UNIT.MM),
+    "C5":  (162 * UNIT.MM, 229  * UNIT.MM),
+    "C6":  (114 * UNIT.MM, 162  * UNIT.MM),
+    "C7":  (81  * UNIT.MM, 114  * UNIT.MM),
+    "C8":  (57  * UNIT.MM, 81   * UNIT.MM),
+    "C9":  (40  * UNIT.MM, 57   * UNIT.MM),
+    "C10": (28  * UNIT.MM, 40   * UNIT.MM),
+
+    "D0":  (771 * UNIT.MM, 1090 * UNIT.MM),
+    "D1":  (545 * UNIT.MM, 771  * UNIT.MM),
+    "D2":  (385 * UNIT.MM, 545  * UNIT.MM),
+    "D3":  (272 * UNIT.MM, 385  * UNIT.MM),
+    "D4":  (192 * UNIT.MM, 272  * UNIT.MM),
+    "D5":  (136 * UNIT.MM, 192  * UNIT.MM),
+    "D6":  (96  * UNIT.MM, 136  * UNIT.MM),
+    "D7":  (68  * UNIT.MM, 96   * UNIT.MM),
+    "D8":  (48  * UNIT.MM, 68   * UNIT.MM),
+}
+
+def landscape(page_size):
+    """
+    Makes sure that no matter what page size is given, it is returned in
+        landscape format, whether it was already in landscap or not.
+    """
+    a, b = page_size
+    if a < b:
+        return (b, a)
+    else:
+        return (a, b)
+
+def portrait(page_size):
+    """
+    The Page size returned is the given page size in portrait orientation, even
+        if it was already in portrait orientation.
+    """
+    a, b = page_size
+    if a >= b:
+        return (b, a)
+    else:
+        return (a, b)

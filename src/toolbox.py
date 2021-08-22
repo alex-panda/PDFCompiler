@@ -14,53 +14,40 @@ from reportlab.lib.fontfinder import FontFinder
 
 from markup import Markup, MarkupStart, MarkupEnd
 from tools import assure_decimal, trimmed, assert_instance, assert_subclass
-from constants import ALIGNMENT as _ALIGNMENT, STRIKE_THROUGH as _STRIKE_THROUGH, UNDERLINE as _UNDERLINE, FONT_FAMILIES, FONT_NAMES, FontFamily, REGISTERED_FONTS
+from constants import ALIGNMENT as _ALIGNMENT, STRIKE_THROUGH as _STRIKE_THROUGH, UNDERLINE as _UNDERLINE, \
+        FONT_FAMILIES, FONT_NAMES, FontFamily, REGISTERED_FONTS, PAGE_SIZES_DICT, UNIT as _UNIT
 
-PAGE_SIZES = ( \
-        'A0', 'A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8', 'A9', 'A10',
-        'B0', 'B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B9', 'B10',
-        'C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9', 'C10',
-        'LETTER', 'LEGAL', 'ELEVENSEVENTEEN', 'JUNIOR_LEGAL', 'HALF_LETTER',
-        'GOV_LETTER', 'GOV_LEGAL', 'TABLOID', 'LEDGER'
-    )
 
-UNITS = ('inch', 'cm', 'mm', 'pica')
+COLORS = ('TRANSPARENT', 'ALICEBLUE', 'ANTIQUEWHITE', 'AQUA', 'AQUAMARINE', 'AZURE',
+'BEIGE', 'BISQUE', 'BLACK', 'BLANCHEDALMOND', 'BLUE', 'BLUEVIOLET', 'BROWN',
+'BURLYWOOD', 'CADETBLUE', 'CHARTREUSE', 'CHOCOLATE', 'CORAL', 'CORNFLOWERBLUE',
+'CORNSILK', 'CRIMSON', 'CYAN', 'DARKBLUE', 'DARKCYAN', 'DARKGOLDENROD',
+'DARKGRAY', 'DARKGREY', 'DARKGREEN', 'DARKKHAKI', 'DARKMAGENTA', 'DARKOLIVEGREEN',
+'DARKORANGE', 'DARKORCHID', 'DARKRED', 'DARKSALMON', 'DARKSEAGREEN', 'DARKSLATEBLUE',
+'DARKSLATEGRAY', 'DARKSLATEGREY', 'DARKTURQUOISE', 'DARKVIOLET', 'DEEPPINK',
+'DEEPSKYBLUE', 'DIMGRAY', 'DIMGREY', 'DODGERBLUE', 'FIREBRICK', 'FLORALWHITE',
+'FORESTGREEN', 'FUCHSIA', 'GAINSBORO', 'GHOSTWHITE', 'GOLD', 'GOLDENROD', 'GRAY',
+'GREY', 'GREEN', 'GREENYELLOW', 'HONEYDEW', 'HOTPINK', 'INDIANRED', 'INDIGO',
+'IVORY', 'KHAKI', 'LAVENDER', 'LAVENDERBLUSH', 'LAWNGREEN', 'LEMONCHIFFON',
+'LIGHTBLUE', 'LIGHTCORAL', 'LIGHTCYAN', 'LIGHTGOLDENRODYELLOW', 'LIGHTGREEN',
+'LIGHTGREY', 'LIGHTPINK', 'LIGHTSALMON', 'LIGHTSEAGREEN', 'LIGHTSKYBLUE',
+'LIGHTSLATEGRAY', 'LIGHTSLATEGREY', 'LIGHTSTEELBLUE', 'LIGHTYELLOW', 'LIME',
+'LIMEGREEN', 'LINEN', 'MAGENTA', 'MAROON', 'MEDIUMAQUAMARINE', 'MEDIUMBLUE',
+'MEDIUMORCHID', 'MEDIUMPURPLE', 'MEDIUMSEAGREEN', 'MEDIUMSLATEBLUE',
+'MEDIUMSPRINGGREEN', 'MEDIUMTURQUOISE', 'MEDIUMVIOLETRED', 'MIDNIGHTBLUE',
+'MINTCREAM', 'MISTYROSE', 'MOCCASIN', 'NAVAJOWHITE', 'NAVY', 'OLDLACE',
+'OLIVE', 'OLIVEDRAB', 'ORANGE', 'ORANGERED', 'ORCHID', 'PALEGOLDENROD',
+'PALEGREEN', 'PALETURQUOISE', 'PALEVIOLETRED', 'PAPAYAWHIP', 'PEACHPUFF',
+'PERU', 'PINK', 'PLUM', 'POWDERBLUE', 'PURPLE', 'RED', 'ROSYBROWN', 'ROYALBLUE',
+'SADDLEBROWN', 'SALMON', 'SANDYBROWN', 'SEAGREEN', 'SEASHELL', 'SIENNA', 'SILVER',
+'SKYBLUE', 'SLATEBLUE', 'SLATEGRAY', 'SLATEGREY', 'SNOW', 'SPRINGGREEN', 'STEELBLUE',
+'TAN', 'TEAL', 'THISTLE', 'TOMATO', 'TURQUOISE', 'VIOLET', 'WHEAT', 'WHITE', 'WHITESMOKE',
+'YELLOW', 'YELLOWGREEN', 'FIDBLUE', 'FIDRED', 'FIDLIGHTBLUE')
 
-COLORS = ('transparent', 'aliceblue', 'antiquewhite', 'aqua', 'aquamarine', 'azure',
-'beige', 'bisque', 'black', 'blanchedalmond', 'blue', 'blueviolet', 'brown',
-'burlywood', 'cadetblue', 'chartreuse', 'chocolate', 'coral', 'cornflowerblue',
-'cornsilk', 'crimson', 'cyan', 'darkblue', 'darkcyan', 'darkgoldenrod',
-'darkgray', 'darkgrey', 'darkgreen', 'darkkhaki', 'darkmagenta', 'darkolivegreen',
-'darkorange', 'darkorchid', 'darkred', 'darksalmon', 'darkseagreen', 'darkslateblue',
-'darkslategray', 'darkslategrey', 'darkturquoise', 'darkviolet', 'deeppink',
-'deepskyblue', 'dimgray', 'dimgrey', 'dodgerblue', 'firebrick', 'floralwhite',
-'forestgreen', 'fuchsia', 'gainsboro', 'ghostwhite', 'gold', 'goldenrod', 'gray',
-'grey', 'green', 'greenyellow', 'honeydew', 'hotpink', 'indianred', 'indigo',
-'ivory', 'khaki', 'lavender', 'lavenderblush', 'lawngreen', 'lemonchiffon',
-'lightblue', 'lightcoral', 'lightcyan', 'lightgoldenrodyellow', 'lightgreen',
-'lightgrey', 'lightpink', 'lightsalmon', 'lightseagreen', 'lightskyblue',
-'lightslategray', 'lightslategrey', 'lightsteelblue', 'lightyellow', 'lime',
-'limegreen', 'linen', 'magenta', 'maroon', 'mediumaquamarine', 'mediumblue',
-'mediumorchid', 'mediumpurple', 'mediumseagreen', 'mediumslateblue',
-'mediumspringgreen', 'mediumturquoise', 'mediumvioletred', 'midnightblue',
-'mintcream', 'mistyrose', 'moccasin', 'navajowhite', 'navy', 'oldlace',
-'olive', 'olivedrab', 'orange', 'orangered', 'orchid', 'palegoldenrod',
-'palegreen', 'paleturquoise', 'palevioletred', 'papayawhip', 'peachpuff',
-'peru', 'pink', 'plum', 'powderblue', 'purple', 'red', 'rosybrown', 'royalblue',
-'saddlebrown', 'salmon', 'sandybrown', 'seagreen', 'seashell', 'sienna', 'silver',
-'skyblue', 'slateblue', 'slategray', 'slategrey', 'snow', 'springgreen', 'steelblue',
-'tan', 'teal', 'thistle', 'tomato', 'turquoise', 'violet', 'wheat', 'white', 'whitesmoke',
-'yellow', 'yellowgreen', 'fidblue', 'fidred', 'fidlightblue')
+_page_sizes = named_tuple('PageSizes', [str(key) for key in PAGE_SIZES_DICT])(*[value for value in PAGE_SIZES_DICT.values()])
 
-_page_sizes = [getattr(pagesizes, page_size) for page_size in PAGE_SIZES]
-_page_sizes = named_tuple('PageSizes', PAGE_SIZES)(*[(Decimal(h), Decimal(w)) for h, w in _page_sizes])
-_page_sizes_dict = {page_size:getattr(_page_sizes, page_size) for page_size in PAGE_SIZES}
-
-_units = named_tuple('Units', UNITS)(*[Decimal(getattr(units, unit)) for unit in UNITS])
-_units_dict = {unit:getattr(units, unit) for unit in UNITS}
-
-_colors = named_tuple('Colors', COLORS)(*[getattr(colors, color) for color in COLORS])
-_colors_dict = {color:getattr(colors, color) for color in COLORS}
+_colors = named_tuple('Colors', COLORS)(*[getattr(colors, color.lower()) for color in COLORS])
+_colors_dict = {color:getattr(colors, color.lower()) for color in COLORS}
 
 _sys_font_search_paths = set(rl_config.TTFSearchPath)
 
@@ -142,9 +129,9 @@ class ToolBox:
     # ---------------------------------
     # Constants made available for coders coding in python in their pdfo files
 
-    COLORS = _colors
-    PAGE_SIZES = _page_sizes
-    UNITS = _units
+    COLOR = _colors
+    PAGE_SIZE = _page_sizes
+    UNIT = _UNIT
     ALIGNMENT = _ALIGNMENT
     STRIKE_THROUGH = _STRIKE_THROUGH
     UNDERLINE = _UNDERLINE
@@ -168,13 +155,43 @@ class ToolBox:
 
     @staticmethod
     def page_size_for_str(page_size_str):
-        return _page_sizes_dict[trimmed(page_size_str).upper()]
-        raise AssertionError(f'{page_size_str} is not a valid page size.')
+        try:
+            return PAGE_SIZES_DICT[trimmed(page_size_str).upper()]
+        except KeyError:
+            raise AssertionError(f'{page_size_str} is not a valid page size.')
 
     @staticmethod
     def unit_for_str(unit_name_str):
-        return _units_dict[trimmed(unit_name_str).lower()]
+        unit_name_str = trimmed(str(unit_name_str)).lower()
+        if unit_name_str in ('cm', 'inch', 'pt', 'mm', 'pica'):
+            return getattr(_UNIT, unit_name_str.upper())
         raise AssertionError(f'{unit_name_str} is not a valid unit.')
+
+    @staticmethod
+    def length_for_str(string):
+        """
+        Canverts string to a a length in pts
+        """
+        try:
+            if string[-2:] == 'cm':
+                return float(string[:-2]) * _UNIT.CM
+            elif string[-1:] == 'i':
+                return float(string[:-1]) * _UNIT.INCH
+            elif string[-2:] == 'in':
+                return float(string[:-2]) * _UNIT.INCH
+            elif string[-4:] == 'inch':
+                return float(string[:-4]) * _UNIT.INCH
+            elif string[-2:] == 'pt':
+                return float(string[:-2])
+            elif string[-3:] == 'pts':
+                return float(string[:-3])
+            elif string[-2:] == 'mm':
+                return float(string[:-2]) * _UNIT.MM
+            elif string[-4:] == 'pica':
+                return float(string[:-4]) * _UNIT.PICA
+            return float(string)
+        except:
+            raise ValueError("Could not convert {string} to a length.")
 
     @staticmethod
     def alignment_for_str(alignment_name):
@@ -417,8 +434,11 @@ class ToolBox:
 
         Returns a tuple of form (hieght:Decimal, width:Decimal)
         """
-        h, w = pagesizes.landscape(page_size)
-        return (assure_decimal(h), assure_decimal(w))
+        a, b = page_size
+        if a < b:
+            return (assure_decimal(b), assure_decimal(a))
+        else:
+            return (assure_decimal(a), assure_decimal(b))
 
     @staticmethod
     def assure_portrait(page_size):
@@ -428,8 +448,11 @@ class ToolBox:
 
         Returns a tuple of form (hieght:Decimal, width:Decimal)
         """
-        h, w = pagesizes.portrait(page_size)
-        return (assure_decimal(h), assure_decimal(w))
+        a, b = page_size
+        if a >= b:
+            return (assure_decimal(b), assure_decimal(a))
+        else:
+            return (assure_decimal(a), assure_decimal(b))
 
     @staticmethod
     def string_size(string, text_info):
