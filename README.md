@@ -16,40 +16,40 @@ A short introduction to the compiler is provided below and a tutorial is
 ## Command Sequences
 
 If you are coming from LaTeX, these should be familiar to you. They allow
-you to conveniently "command" text be a certain way. You use a backslash
-"\" and then the name of a command to specify what command you want to
-use, and then you given the command "arguments" by putting the text you
-want to command inside curly bracktes "{}". A few examples would be:
+    you to conveniently "command" text be a certain way. You use a backslash
+    "\" and then the name of a command to specify what command you want to
+    use, and then you given the command "arguments" by putting the text you
+    want to command inside curly bracktes "{}". A few examples would be:
 
-\b{text to bold}
-\i{text to italisize}
-\underline{text to underline}
-\font{name of font to change to}{size of font}{text to change to
-    specified font and font size}
+    \b{text to bold}
+    \i{text to italisize}
+    \underline{text to underline}
+    \font{name of font to change to}{size of font}{text to change to
+        specified font and font size}
 
-As you can see, not all commands take just one argument. Some take
-additional arguments such as the name of a font and the size of the font.
+    As you can see, not all commands take just one argument. Some take
+    additional arguments such as the name of a font and the size of the font.
 
-Some commands also store information that will be added to the meta-data
-of the PDF. A few examples include:
+    Some commands also store information that will be added to the meta-data
+    of the PDF. A few examples include:
 
-\title{The Title of Your PDF}
-\author{The Author of Your PDF}
-\created{The Creation Date of the PDF}
+    \title{The Title of Your PDF}
+    \author{The Author of Your PDF}
+    \created{The Creation Date of the PDF}
 
-Other commands take no arguments at all. An example of this would be
+    Other commands take no arguments at all. An example of this would be
 
-\available_fonts
+    \available_fonts
 
-which searches the most common places for fonts to be on your computer and
-writes the names of the fonts it found on your PDF. This command in
-particular is meant to help you figure out what fonts you have available
-to use in your PDF.
+    which searches the most common places for fonts to be on your computer and
+    writes the names of the fonts it found on your PDF. This command in
+    particular is meant to help you figure out what fonts you have available
+    to use in your PDF.
 
 Commands are what most people will use majority of the time because of how
-convenient they are, but do realize that most of them are just wrappers for
-python code so there is nothing that you can do with commands that you cannot
-do with Python, commands are just far more convenient.
+    convenient they are, but do realize that most of them are just wrappers for
+    python code so there is nothing that you can do with commands that you
+    cannot do with Python, commands are just far more convenient.
 
 For a more in-depth look at commands, look at the command section of the
     tutorial.
@@ -72,33 +72,33 @@ is run after pass 1 Python code so if you assign "x = 0" in pass 2 Python
 code you cannot get the value of x in pass 1 because "x = 0" has not been
 run yet.
 
-When designating Python code, you can either designate one line of it or
-multiple lines. The single-line syntax is
+    When designating Python code, you can either designate one line of it or
+    multiple lines. The single-line syntax is
 
-\>print('This is Python code because of the \\>')
+    \>print('This is Python code because of the \\>')
 
-and the multi-line syntax is
+    and the multi-line syntax is
 
-\->
-print('This is Python code because of the \\-><-\\')
-<-\
+    \->
+    print('This is Python code because of the \\-><-\\')
+    <-\
 
-with everything in-between the arrows being Python code. Of course, all
-white space between the arrows is included so be careful that the code is
-properly indented or else Python will raise an error.
+    with everything in-between the arrows being Python code. Of course, all
+    white space between the arrows is included so be careful that the code is
+    properly indented or else Python will raise an error.
 
-By default, the designated code will be run in the first pass. If you want
-to designate code to be run on the second pass, then you must do
+    By default, the designated code will be run in the first pass. If you want
+    to designate code to be run on the second pass, then you must do
 
-\2>
+    \2>
 
-or
+    or
 
-\2-><-\
+    \2-><-\
 
-and the 2 will designate it as Python code to be run on the second pass.
+    and the 2 will designate it as Python code to be run on the second pass.
 
 For a more in-depth look at how to use python, look at the python section of
-the tutorial.
+    the tutorial.
 
 
