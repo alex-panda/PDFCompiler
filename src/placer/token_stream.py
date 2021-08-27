@@ -56,7 +56,7 @@ class TokenStream:
         else:
             self._globals = {}
 
-        globals_to_add = {'placer':self}
+        globals_to_add = {'pdf':self}
         self._globals.update(globals_to_add)
 
         self._placer_stack = [starting_placer]

@@ -7,9 +7,6 @@ import re
 import copy as _copy
 from decimal import Decimal
 
-from reportlab.lib.units import inch, cm, mm, pica, toLength
-from reportlab.lib import units, colors, pagesizes as pagesizes
-
 from placer.placer import Placer
 from constants import CMND_CHARS, END_LINE_CHARS, ALIGNMENT, TT, TT_M, WHITE_SPACE_CHARS, NON_END_LINE_CHARS, PB_NUM_TABS, PB_NAME_SPACE, STD_FILE_ENDING, STD_LIB_FILE_NAME, OUT_TAB
 from tools import assure_decimal, is_escaped, is_escaping, exec_python, eval_python, string_with_arrows, trimmed, print_progress_bar, prog_bar_prefix, calc_prog_bar_refresh_rate, assert_instance

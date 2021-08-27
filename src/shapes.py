@@ -328,9 +328,14 @@ class Rectangle(Shape):
     def __repr__(self):
         return f'{type(self).__name__}({self.point()}, {self.size()})'
 
-from reportlab.pdfgen.pathobject import PDFPathObject as _Path
+class _Path:
+    """
+    A placeholder class for when FPDF gets a Path Object
+    """
+    def __init__(self):
+        pass
 
-class Path(_Path, Shape):
+class Path(Shape):
     def __init__(self, line_cap=2, line_join=2, miter_limit=4):
         _Path.__init__(self)
         Shape.__init__(self, line_cap, line_join, miter_limit)

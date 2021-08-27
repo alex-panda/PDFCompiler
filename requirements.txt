@@ -1,9 +1,6 @@
-aenum==3.1.0
-certifi==2021.5.30
 flake8==3.8.4
+fpdf2==2.4.2
 Pillow==8.3.1
 pycodestyle==2.6.0
 pyflakes==2.2.0
-reportlab==3.5.68
 rope==0.17.0
-wincertstore==0.2

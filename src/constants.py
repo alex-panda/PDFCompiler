@@ -49,7 +49,7 @@ class VAR_TYPES(Enum):
     DICT = 'dict'
 
 # The characters that a valid control sequence can have
-CMND_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_"
+CMND_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789"
 
 class TT(Enum):
     """Token Types"""
