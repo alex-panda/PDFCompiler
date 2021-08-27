@@ -133,31 +133,31 @@ is run after pass 1 Python code so if you assign "x = 0" in pass 2 Python
 code you cannot get the value of x in pass 1 because "x = 0" has not been
 run yet.
 
-    When designating Python code, you can either designate one line of it or
-    multiple lines. The single-line syntax is
+When designating Python code, you can either designate one line of it or
+multiple lines. The single-line syntax is
 
     \>print('This is Python code because of the \\>')
 
-    and the multi-line syntax is
+and the multi-line syntax is
 
     \->
     print('This is Python code because of the \\-><-\\')
     <-\
 
-    with everything in-between the arrows being Python code. Of course, all
-    white space between the arrows is included so be careful that the code is
-    properly indented or else Python will raise an error.
+with everything in-between the arrows being Python code. Of course, all
+white space between the arrows is included so be careful that the code is
+properly indented or else Python will raise an error.
 
-    By default, the designated code will be run in the first pass. If you want
-    to designate code to be run on the second pass, then you must do
+By default, the designated code will be run in the first pass. If you want
+to designate code to be run on the second pass, then you must do
 
     \2>
 
-    or
+or
 
     \2-><-\
 
-    and the 2 will designate it as Python code to be run on the second pass.
+and the 2 will designate it as Python code to be run on the second pass.
 
 For a more in-depth look at how to use python, look at the python section of
     the tutorial.
