@@ -4,7 +4,7 @@
 
 A compiler that creates richtext PDFs (the PDF's text is bolded, italicized,
     underlined, etc.) from plain text files such as .txt files. Enriching
-    your the document's text can be done either through Command Sequences,
+    the document's text can be done either through Command Sequences,
     which are an excedingly simple to use, or through the use of the programming
     language Python which can be embeded directly in your documents (i.e. you
     can designate Python code directly in your plain text document and the
