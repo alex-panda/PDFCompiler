@@ -1,12 +1,10 @@
-from reportlab.lib.units import inch, cm, mm, pica, toLength
-from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfgen.canvas import Canvas
-from reportlab.lib.colors import HexColor, Color, CMYKColor
+from fpdf import FPDF
+from fpdf.errors import FPDFException
 
 from tools import assure_decimal, assert_instance, assert_subclass, draw_str
 from tools import prog_bar_prefix, print_progress_bar, calc_prog_bar_refresh_rate
-from constants import TT, ALIGNMENT, ALIGNMENT, STRIKE_THROUGH, UNDERLINE, FONT_FAMILIES, FONT_NAMES
+from constants import TT, ALIGNMENT, ALIGNMENT, STRIKE_THROUGH, UNDERLINE, FONT_FAMILIES, FONTS_TO_IMPORT, UNIT, FONTS
+from color import Color
 
 from shapes import Point, Rectangle
 
@@ -15,7 +13,8 @@ from decimal import Decimal
 
 
 class TextInfo:
-    __slots__ = ['_script', '_alignment', '_line_spacing',
+    __slots__ = [
+            '_script', '_alignment', '_line_spacing',
             '_font_name', '_font_size', '_font_color', '_font_color_gray', '_font_color_alpha', '_font_highlight_color',
             '_underline', '_strikethrough',
             '_bold', '_italics', '_can_split_words']
@@ -77,8 +76,8 @@ class TextInfo:
 
         if fn in FONT_FAMILIES:
             fn = FONT_FAMILIES[fn].font(self.bold(), self.italics())
-        elif fn in FONT_NAMES:
-            fn = FONT_NAMES[fn]
+        elif fn in FONTS:
+            fn = FONTS[fn].full_name
         return fn
 
     def font_name(self):
@@ -94,8 +93,14 @@ class TextInfo:
     def set_font_name(self, new):
         if isinstance(new, bytes):
             new = new.decode('utf-8')
+
         assert_instance(new, str, 'font_name')
+
+        if new is not None:
+            new = new.replace(' ', '')
+
         self._font_name = new
+
         return self
 
     def font_size(self):
@@ -110,7 +115,7 @@ class TextInfo:
         return self._font_color
 
     def set_font_color(self, new):
-        assert_instance(new, (Color, CMYKColor), 'font_color')
+        assert_instance(new, Color, 'font_color')
         self._font_color = new
         return self
 
@@ -124,21 +129,11 @@ class TextInfo:
         self._font_color_gray = new
         return self
 
-    def font_color_alpha(self):
-        return self._font_color_alpha
-
-    def set_font_color_alpha(self, new):
-        assert_instance(new, (float, int), 'font_color_alpha')
-        if new is not None:
-            assert 0.0 <= new <= 1.0, f'font_color_alpha must be between 0 and 1 inclusive, not {new}'
-        self._font_color_alpha = new
-        return self
-
     def font_highlight_color(self):
         return self._font_highlight_color
 
     def set_font_highlight_color(self, new):
-        assert_instance(new, (Color, CMYKColor), 'font_highlight_color')
+        assert_instance(new, Color, 'font_highlight_color')
         self._font_highlight_color = new
         return self
 
@@ -237,33 +232,50 @@ class TextInfo:
         """
         Apply what can be applied to the canvas.
         """
-        # Handle Font nam and Font Size
-        fn, fs = self.working_font_name(), self.font_size()
+        # Handle Font name
+        fn = self.working_font_name()
 
-        assert not (fn is not None and fs is None), f'The font name was given but the font size was not. Both the Font name'
+        if fn is not None:
+            try:
+                canvas.set_font(fn, style='')
+            except FPDFException:
 
-        if fn is not None and fs is not None:
-            canvas.setFont(fn, fs)
-        elif fs is not None:
-            canvas.setFontSize(fs)
+                if fn[-2:] == 'BI':
+                    fn = fn[:-2]
+                    style = 'BI'
 
-        # Handle font color
-        fc = self.font_color()
-        assert_instance(fc, (CMYKColor, Color), 'font_color')
+                elif fn[-1:] == 'B':
+                    fn = fn[:-1]
+                    style = 'B'
 
-        if fc is not None:
-            canvas.setFillColor(fc)
+                elif fn[-1:] == 'I':
+                    fn = fn[:-1]
+                    style = 'I'
 
-        fca = self.font_color_alpha()
-        if fca is not None:
-            canvas.setFillAlpha(fca)
+                else:
+                    style = ''
+
+                canvas.set_font(fn, style=style)
+
+        # handle font size
+        fs = self.font_size()
+
+        if fs is not None:
+            canvas.set_font_size(fs)
 
         fcg = self.font_color_gray()
         assert_instance(fcg, float, 'font_color_gray')
 
         if fcg is not None:
             assert 0.0 <= fcg <= 1.0, f'font_color_gray values must be between 0 and 1 inclusive, not {fcg}'
-            canvas.setFillGray(fcg)
+            canvas.set_text_color(fcg)
+
+        # Handle font color
+        fc = self.font_color()
+        assert_instance(fc, Color, 'font_color')
+
+        if fc is not None:
+            canvas.set_text_color(*fc.rgb())
 
     def __repr__(self):
         string = f'{self.__class__.__name__}('
@@ -624,7 +636,11 @@ class PDFDocument(PDFComponent):
         """
         Draws the PDFDocument either to a canvas or to the output_file_path
         """
-        canvas = Canvas(output_file_path, bottomup=0)
+        canvas = FPDF(unit='pt', font_cache_dir=None)
+        canvas.set_auto_page_break(False, 0)
+        # Import all the fonts that we need to so that the canvas can use them
+        for font_name, font_file_path in FONTS_TO_IMPORT.items():
+            canvas.add_font(font_name, fname=font_file_path, uni=True)
 
         for obj in self._apply_to_canvas_list:
             obj.apply_to_canvas(canvas)
@@ -645,7 +661,7 @@ class PDFDocument(PDFComponent):
             for page in self._pages:
                 page.draw(canvas)
 
-        canvas.save()
+        canvas.output(str(output_file_path))
 
     # ----------------------------------------
     # Private Methods
@@ -771,12 +787,10 @@ class PDFPage(PDFComponent):
             col._call_end_callbacks()
 
     def draw(self, canvas):
-        canvas.setPageSize(self.page_size())
+        canvas.add_page(format=tuple(float(s) for s in self.page_size()))
 
         for col in self._cols:
             col.draw(canvas)
-
-        canvas.showPage()
 
     def __repr__(self):
         return f'{self.__class__.__name__}(columns={self._cols})'
@@ -1113,6 +1127,7 @@ class PDFWord(PDFInlineObject):
             automatically calculates the dimensions of the text with and without
             a space.
         """
+        assert isinstance(text, str), f'text must be a str, not {text}'
         self._text = text
 
         self._width_with_space, self._height_with_space = \
@@ -1137,7 +1152,12 @@ class PDFWord(PDFInlineObject):
         if line_height is not None:
             draw_point += Point(0, line_height)
 
-        draw_str(canvas, draw_point, self.text())
+        # For some reason using the text() method makes parenthesis not show and
+        #   just be super wonky so have to substitute it out with the following
+        #   two method calls
+        #canvas.text(float(draw_point.x()), float(draw_point.y()), self.text())
+        canvas.set_xy(float(draw_point.x()), float(draw_point.y()))
+        canvas.cell(w=0, h=0, txt=self.text())
 
     def _call_end_callbacks(self):
         super()._call_end_callbacks()
@@ -1361,7 +1381,6 @@ class PDFDocumentTemplate(Template):
         t.set_font_size(12)
         t.set_font_color(ToolBox.COLOR.BLACK)
         t.set_font_color_gray(None)
-        t.set_font_color_alpha(1)
         t.set_font_highlight_color(None)
 
         t.set_underline(UNDERLINE.NONE)
@@ -1459,8 +1478,9 @@ class PDFPageTemplate(Template):
         default = PDFPage()
 
         # Set Defaults for Pages
-        default.set_margins(1*inch, 1*inch, 1*inch, 1 * inch)
-        default.set_page_size(ToolBox.PAGE_SIZE.A4)
+        default.set_margins(1 * UNIT.INCH, 1 * UNIT.INCH, 1 * UNIT.INCH, 1 * UNIT.INCH)
+
+        default.set_page_size(ToolBox.PAGE_SIZE.LETTER)
         default.set_grid(1, 1)
 
         super().__init__(default, PDFColumnTemplate())
@@ -1505,7 +1525,7 @@ class PDFParagraphLineTemplate(Template):
 
         def tab_callback(par_line):
             if par_line.text_info().alignment() == ALIGNMENT.LEFT:
-                par_line.set_left_margin(0.5 * inch)
+                par_line.set_left_margin(0.5 * UNIT.INCH)
 
         first_line.add_on_creation_callback(tab_callback)
         self.add_concrete(first_line)

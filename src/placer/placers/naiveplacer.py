@@ -1,6 +1,3 @@
-
-from reportlab.lib.units import inch, cm, mm, pica, toLength
-
 import copy
 from decimal import Decimal
 from abc import ABC, abstractmethod
@@ -19,200 +16,61 @@ class NaivePlacer(Placer):
     The object that actually places tokens onto the PDF depending on the
         templates it is using. This is a Naive Placer because it just naively
         tries to place each word line by line, putting the word on the next
-        line if it does not word on the current line.
-        """
-    def __init__(self, tokens, globals=None, file_path=None, print_progress=False):
-        self._tokens = tokens
-        self._tok_idx = -1
-        self._current_tok = None
-        self._advance()
-
-        self._progress_bar_prefix = 'Placing' if file_path is None else prog_bar_prefix('Placing', file_path)
-        self._print_progress = print_progress
-
-        # The templates that determine the things like color, boldness, size, etc.
-        #   of the current word.
-        self._default_template = PDFDocumentTemplate()
-        self._template_stack = []
-
-        # The actual PDFDocument that determines how everything is placed
-        self._curr_document = None # Only one PDF document, but just to keep it standard it is call _curr_document
-        self._curr_page = None
-        self._curr_column = None
-        self._curr_paragraph = None
-        self._curr_paragraph_line = None
-
+        line if the word does not fit on the current line.
+    """
+    def __init__(self, token_stream):
+        self._token_stream = token_stream
         self._last_placed_paragraph_line = None
 
-        # A list of the different objects that have apply_to_canvas methods
-        self._apply_to_canvas_list = []
-
-        if globals is not None:
-            self._globals = globals
-        else:
-            self._globals = {}
-
-        globals_to_add = {'placer':self}
-        self._globals.update(globals_to_add)
-
-    # ------------------------
-    # Public Methods
-
-    def curr_document(self):
+    def place(self):
         """
-        Returns the current document. There is only one document per PDF, but
-            just to keep it standard (like the other methods) it is called
-            "curr_document"
+        Takes the tokens given to this Object at creation time and creates a PDF.
+            This method is run by the compiler to create the actual PDF, IT
+            SHOULD NOT BE RUN IN THE PDFO FILE. It returns a PDFDocument that
+            you can run the PDFDocument.draw(output_file_name) to actually draw
+            it to a file.
         """
-        return self._curr_document
+        from compiler import Token
+        ts = self._token_stream
 
-    def curr_page(self):
-        return self._curr_page
+        while ts.curr_token() is not None:
 
-    def curr_column(self):
-        return self._curr_column
+            ct = ts.curr_token() # Current Token
 
-    def curr_paragraph(self):
-        return self._curr_paragraph
-
-    def curr_paragraph_line(self):
-        return self._curr_paragraph_line
-
-    def curr_template(self):
-        """
-        Returns the current template being used.
-        """
-        if len(self._template_stack) > 0:
-            return self._template_stack[-1]
-        else:
-            return self._default_template
-
-    def push_template(self, template):
-        """
-        Push a template onto the template stack. Make sure to call pop_template
-            later when the template is done being used.
-        """
-        assert isinstance(PDFDocumentTemplate), f'All templates pushed onto the Template stack must be of type PDFDocumentTemplate, not {template}.'
-        template.sync_indexes_with(self.curr_template())
-        self._template_stack.append(template)
-
-    def pop_template(self):
-        """
-        Pops a template off the template stack.
-        """
-        popped = self._template_stack.pop()
-        self.curr_template().sync_indexes_with(popped)
-        return popped
-
-    def default_template(self):
-        return self._default_template
-
-    def set_default_template(self, new_template):
-        assert isinstance(PDFDocumentTemplate), f'The default template must be of type PDFDocumentTemplate, not {new_template}'
-        self._default_template = new_template
-
-    def add_apply_to_canvas_obj(self, apply_to_canvas_obj):
-        self._apply_to_canvas_list.append(apply_to_canvas_obj)
-
-    # ---------------------------
-    # Public Methods for Starting New PDF Elements
-
-    # Note: these new_pdf object methods each create whatever they depend on
-    #   but also set what depends on them to None. For example, the current
-    #   PDFColumn depends on the current page, so if a new page is called
-    #   then it sets the current PDFColumn to None
-
-    def _new_document(self):
-        """
-        Start a new PDFDocument. Should only be called once by the Placer,
-            this method should NOT be called in any .pdfo file.
-        """
-        self._curr_document = self.curr_template().next_document(peek=False)
-        self._curr_page = None
-        self._curr_column = None
-        self._curr_paragraph = None
-        self._curr_paragraph_line = None
-
-    def new_page(self):
-        """
-        Start a new Page of the Document
-        """
-        if self.curr_document() is None:
-            self._new_document()
-
-        if self.curr_page() is not None:
-            # Go throught he PDFColumns of the current template as if each of the
-            #   PDFColumns that should be on the current page were actually put
-            #   on it.
-            while self.curr_page()._next_column_rect() is not None:
-                self.new_column()
-
-        self._curr_page = self.curr_template().next_page(peek=False)
-
-        self.curr_document()._add_page(self._curr_page)
-        self._curr_page._set_parent_document(self.curr_document())
-
-        self._create_col_rects(self._curr_page)
-        self._curr_column = None
-
-    def new_column(self):
-        """
-        If curr_column() is None after calling this method, that means that the
-            current page has no more culumns on it, so you must call new_page
-            and then check to see if that page has a column on it by seeing
-            if curr_column() is None again after calling new_page()
-        """
-        if self.curr_page() is None:
-            self.new_page()
-
-        for i in range(999):
-            col_rect = self.curr_page()._next_column_rect(peek=False)
-
-            if col_rect is None:
-                # The next page will try to set the set the column to its first
-                #   column.
-                self.new_page()
+            if isinstance(ct, Token):
+                self._handle_token()
+            elif isinstance(ct, (MarkupStart, MarkupEnd)):
+                ts.handle_markup()
             else:
-                self._curr_column = self.curr_template().next_column(peek=False)
-                self._curr_column.set_total_rect(col_rect)
-                self.curr_page()._add_col(self._curr_column)
-                self._curr_column._set_parent_page(self.curr_page())
-                break
-        else:
-            # TODO make this give the current token it was working on and where
-            #   thus where it was in the file when it ran into this error
-            raise AssertionError('A new PDFColumn could not be found even after checking the next 999 pages. You need to add a page that has PDFColumns for text to the current template if you want a new PDFColumn.')
+                raise Exception(f'Placer cannot handle Token: {ct}')
 
-    def new_paragraph(self):
-        """
-        Starts a new Paragraph.
-        """
-        if self.curr_document() is None:
-            self._new_document()
+        cpl = ts.curr_paragraph_line()
 
-        if self.curr_column() is None:
-            self.new_column()
-
-        cpl = self.curr_paragraph_line()
         if cpl is not None and cpl.word_count() > 0:
             self._place_curr_paragraph_line()
 
-        self._curr_paragraph = self.curr_template().next_paragraph(peek=False)
-        self._curr_paragraph._set_parent_document(self.curr_document())
-        self.curr_column()._add_paragraph(self._curr_paragraph)
-        self._curr_paragraph_line = None
+    def new_paragraph(self):
+        """
+        Starts a new paragarph, basically just wraps the TokenStream's
+            new_paragraph method so that we can call _place_curr_paragraph_line
+        """
+        cpl = self._token_stream.curr_paragraph_line()
+
+        if cpl is not None and cpl.word_count() > 0:
+            self._place_curr_paragraph_line()
+
+        self._token_stream.new_paragraph()
 
     def new_paragraph_line(self):
         """
-        Starts a new Paragraph line.
+        Starts a new paragarph_line, basically just wraps the TokenStream's
+            new_paragraph_line method so that we can call
+            _place_curr_paragraph_line
         """
-        if self.curr_column() is None:
-            self.new_column()
+        if self._token_stream.curr_paragraph_line() is not None:
+            self._place_curr_paragraph_line()
 
-        if self.curr_paragraph_line() is not None:
-            self._place_curr_paragraph_line(False)
-
-        self._curr_paragraph_line = self.curr_template().next_paragraph_line(peek=False)
+        self._token_stream.new_paragraph_line()
 
     def new_word(self, word:str, space_before=True):
         """
@@ -222,7 +80,8 @@ class NaivePlacer(Placer):
             # Don't add words that have nothing in them
             return
 
-        ct = self.curr_template()
+        ts = self._token_stream
+        ct = ts.curr_template()
         next_word = ct.next_word(peek=False)
         next_word.set_text(word)
         next_word.set_space_before(space_before)
@@ -234,23 +93,23 @@ class NaivePlacer(Placer):
         #   otherwise add it to the next paragraph line.
         for i in range(9999):
             # Find next column if there is not one currently
-            cc = self.curr_column()
+            cc = ts.curr_column()
             if cc is None:
-                self.new_column() # Make sure that a column is found
-                cc = self.curr_column()
+                ts.new_column() # Make sure that a column is found
+                cc = ts.curr_column()
 
             # Create a new paragraph line if there is not one currently (it is
             #   added to the current paragraph but not current Column)
 
-            cp = self.curr_paragraph()
+            cp = ts.curr_paragraph()
             if cp is None:
                 self.new_paragraph()
-                cp = self.curr_paragraph()
+                cp = ts.curr_paragraph()
 
-            cpl = self.curr_paragraph_line()
+            cpl = ts.curr_paragraph_line()
             if cpl is None:
                 self.new_paragraph_line()
-                cpl = self.curr_paragraph_line()
+                cpl = ts.curr_paragraph_line()
                 refresh_words = True
 
             if refresh_words:
@@ -267,7 +126,7 @@ class NaivePlacer(Placer):
                 self._place_curr_paragraph_line()
 
             if need_new_col:
-                self.new_column()
+                ts.new_column()
                 continue
             elif width_used:
                 self.new_paragraph_line()
@@ -281,67 +140,11 @@ class NaivePlacer(Placer):
     # ------------------------
     # Public and Private Methods For Advanceing and Processing Tokens
 
-    def create_pdf(self):
-        """
-        Takes the tokens given to this Object at creation time and creates a PDF.
-            This method is run by the compiler to create the actual PDF, IT
-            SHOULD NOT BE RUN IN THE PDFO FILE. It returns a PDFDocument that
-            you can run the PDFDocument.draw(output_file_name) to actually draw
-            it to a file.
-        """
-        from compiler import Token
-
-        self._new_document()
-
-        print_progress = self._print_progress
-
-        if print_progress:
-            tok_len = len(self._tokens)
-            prefix = self._progress_bar_prefix
-            r = calc_prog_bar_refresh_rate(tok_len)
-            print_progress_bar(0, tok_len, prefix)
-
-        while self._current_tok is not None:
-
-            if print_progress:
-                i = self._tok_idx
-                if i % r == 0:
-                    print_progress_bar(i, tok_len, prefix)
-
-            ct = self._current_tok # Current Token
-
-            if isinstance(ct, Token):
-                self._handle_token()
-            elif isinstance(ct, (MarkupStart, MarkupEnd)):
-                self._handle_markup()
-            else:
-                raise Exception(f'Placer cannot handle Token: {self._current_tok}')
-
-        cpl = self.curr_paragraph_line()
-        if cpl is not None and cpl.word_count() > 0:
-            self._place_curr_paragraph_line()
-
-        cd = self.curr_document()
-        cd._call_end_callbacks()
-
-        if print_progress:
-            print_progress_bar(self._tok_idx, tok_len, prefix)
-
-        for obj in self._apply_to_canvas_list:
-            cd.add_apply_to_canvas_obj(obj)
-
-        return cd
-
-    def _advance(self, num=1):
-        """Advances to the next character in the text if it should advance."""
-        self._tok_idx += num
-        self._current_tok = self._tokens[self._tok_idx] if 0 <= self._tok_idx < len(self._tokens) else None
-
     def _handle_token(self):
         """
         The state that is entered when a token is being handled.
         """
-        ct = self._current_tok
+        ct = self._token_stream.curr_token()
         tt = ct.type
 
         result = None
@@ -349,44 +152,12 @@ class NaivePlacer(Placer):
         if tt == TT.PARAGRAPH_BREAK:
             #self.new_word('<BREAK>', True) # For debug purposes
             self.new_paragraph()
-        elif tt == TT.EXEC_PYTH2:
-            result = exec_python(ct.value, self._globals, ct.locals)
-        elif tt == TT.EVAL_PYTH2:
-            result = eval_python(ct.value, self._globals, ct.locals)
+        elif tt in (TT.EXEC_PYTH2, TT.EVAL_PYTH2):
+            self._token_stream.handle_python_token()
         else:
             self.new_word(ct.value, ct.space_before)
 
-        if isinstance(result, Exception) or issubclass(type(result), Exception):
-            from compiler import PythonException, Context
-
-            raise PythonException(ct.start_pos.copy(), ct.end_pos.copy(),
-                'An error occured while running your Python code.', result, Context('Placer', 'Placer', globals=self._globals))
-
-        self._advance()
-
-    def _handle_markup(self):
-        """
-        The state that is entered when markup is being handled.
-        """
-        #print('Advanced past Markup')
-        markup = self._current_tok
-
-        if isinstance(markup, MarkupStart):
-            # get the current PDFDocument's default text_info
-            cti = self.curr_template().default().text_info()
-
-            # Now make it easy to undo the changes at the end of the range
-            if markup.markup_end is not None:
-                markup.markup_end.undo_dict = cti.gen_undo_dict(markup.markup.text_info())
-
-            # Actually change the current document's info to what it should be
-            cti.merge(markup.markup.text_info())
-
-        elif isinstance(markup, MarkupEnd):
-            cti = self.curr_template().default().text_info()
-            cti.undo(markup.undo_dict)
-
-        self._advance()
+        self._token_stream.advance()
 
     # -----------------
     # Public and Private Placement Methods
@@ -405,25 +176,26 @@ class NaivePlacer(Placer):
             paragraph line onto the current column with the same height
             as the last one.
         """
-        if self.curr_column() is None:
-            self.new_column()
+        ts = self._token_stream
+        if ts.curr_column() is None:
+            ts.new_column()
 
-        if self.curr_paragraph() is None:
+        if ts.curr_paragraph() is None:
             self.new_paragraph()
 
-        cc = self.curr_column()
-        cp = self.curr_paragraph()
-        cpl = self.curr_paragraph_line()
+        cc = ts.curr_column()
+        cp = ts.curr_paragraph()
+        cpl = ts.curr_paragraph_line()
 
         if cpl is None or cpl.word_count() == 0:
-            cpl = self.curr_template().next_paragraph_line(peek=False)
+            cpl = ts.curr_template().next_paragraph_line(peek=False)
             # We have to make a new PDFParagraphLine with either the same size
             #   as the last one or a completely new size
-            if self._last_placed_paragraph_line is not None:
-                cpl.set_total_height(self._last_placed_paragraph_line.total_height())
+            if ts.prev_paragraph_line() is not None:
+                cpl.set_total_height(ts.prev_paragraph_line().total_height())
             else:
                 # Just set it to a default height
-                cpl.set_total_height(12) # Makes it the same height as 12 point font
+                cpl.set_total_height(cpl.text_info().font_size()) # Makes it the same height as 12 point font
 
             cpl.set_total_width(0)
         else:
@@ -435,9 +207,9 @@ class NaivePlacer(Placer):
 
             cpl.set_total_offset(offset)
 
-            self._place_words_on_line(cpl, cpl.text_info().alignment())
+            self._token_stream.place_words_with_alignment(cpl, cpl.text_info().alignment())
 
-        self._last_placed_paragraph_line = cpl
+        ts._prev_paragraph_line = cpl
 
         # This adds the total height of the line to the cc.height_used()
         #   and adds th paragraph line to the column
@@ -451,75 +223,12 @@ class NaivePlacer(Placer):
         for word in cpl._pdfwords:
             word._set_parent_paragraph_line(cpl)
 
-        if replace_with_none:
-            self._curr_paragraph_line = None
-        else:
+        ts._curr_paragraph_line = None
+
+        if not replace_with_none:
             self.new_paragraph_line()
 
     # Private methods for PDFParagraphLine
-
-    @staticmethod
-    def _place_words_on_line(pdf_paragraph_line, alignment):
-        """
-        Actually places the words currently in the given ParagrahLine depending on
-            what alignment this paragraph line is using.
-        """
-        ppl = pdf_paragraph_line
-        align = alignment
-
-        if ppl._curr_alignment != ALIGNMENT.LEFT:
-            # Align the words left
-            offset = ppl.inner_offset()
-            for word in ppl._pdfwords:
-                word.set_total_offset(offset)
-                offset += Point(word.total_width(), 0)
-
-            ppl._curr_alignment = ALIGNMENT.LEFT
-
-        if align == ALIGNMENT.CENTER:
-            ppl._curr_alignment = ALIGNMENT.CENTER
-
-            # Now nudge the words that are aligned left to the right so that
-            # they are centered
-
-            # The inner_width is the width that the words CAN use and
-            #   curr_width is the width that the words DO use
-            nudge_amt = (ppl.inner_width() - ppl.curr_width()) / 2
-
-            for word in ppl._pdfwords:
-                word.set_total_offset(word.total_offset() + Point(nudge_amt, 0))
-
-        elif align == ALIGNMENT.RIGHT:
-            ppl._curr_alignment = ALIGNMENT.RIGHT
-
-            # Now nudge the words that are aligned left to the right so that
-            # they are right aligned
-            nudge_amt = ppl.inner_width() - ppl.curr_width()
-
-            for word in ppl._pdfwords:
-                word.set_total_offset(word.total_offset() + Point(nudge_amt, 0))
-
-        elif align == ALIGNMENT.JUSTIFY:
-            ppl._curr_alignment = ALIGNMENT.JUSTIFY
-            word_cnt = 0
-
-            for i, word in enumerate(ppl._pdfwords):
-                if i != 0 and word._space_before:
-                    word_cnt += 1
-
-            if word_cnt > 0:
-                # Now nudge each word to the right so that they are equally spaced
-                nudge_amt = (ppl.inner_width() - ppl.curr_width()) / word_cnt
-
-                curr_word_cnt = 0
-                for i, word in enumerate(ppl._pdfwords):
-                    if i != 0 and word._space_before:
-                        curr_word_cnt += 1
-
-                    word.set_total_offset(word.total_offset() + Point(nudge_amt * curr_word_cnt, 0))
-
-        elif align != ALIGNMENT.LEFT:
-            raise AssertionError(f'This PDFParagraphLine was had alignment {align}, which is not a valid alignment.')
 
     @staticmethod
     def _add_words_to_line(pdf_paragraph, pdf_paragraph_line, list_of_pdfwords, column_available_size):
@@ -595,53 +304,3 @@ class NaivePlacer(Placer):
         ppl.set_inner_height(curr_height)
 
         return (leftover_words, False, width_used) if len(leftover_words) > 0 else (None, False, width_used)
-
-    @staticmethod
-    def _create_col_rects(pdf_page):
-        """
-        Creates the PDFColumn objects for this PDFPage.
-        """
-        assert len(pdf_page._col_rects) == 0, f'The columns for this page have already been created. Number of PDFColumns: {len(pdf_page._col_rects)}'
-        assert pdf_page.num_rows() >= 0 and pdf_page.num_cols() >= 0, f'The numbers of columns and rows for a PDFPage must both be atleast 0. They are (row_count, column_count): ({pdf_page._num_rows}, {pdf_page._num_cols})'
-
-        if pdf_page.num_rows() == 0 or pdf_page.num_cols() == 0:
-            # No need to create any Column objects whatsoever
-            return
-
-        curr_x_offset, curr_y_offset = starting_x, starting_y = pdf_page.inner_offset().xy()
-        col_width = pdf_page.inner_width() / pdf_page.num_cols()
-        col_height = pdf_page.inner_height() / pdf_page.num_rows()
-
-        fill_rows_first = pdf_page.fill_rows_first()
-        #print(f'{pdf_page.num_rows()} * {pdf_page.num_cols()} = {pdf_page.num_rows() * pdf_page.num_cols()}')
-
-        # create the Column objects and place them on the page.
-        for i in range(pdf_page.num_rows() * pdf_page.num_cols()):
-            # Create new column
-            next_col = Rectangle()
-
-            # Place the column
-            next_col.set_point(Point(curr_x_offset, curr_y_offset))
-            next_col.set_size(col_width, col_height)
-
-            # Add the column to the list of columns
-            pdf_page._col_rects.append(next_col)
-
-            # Figure out where the next column will be placed.
-            if fill_rows_first:
-                curr_x_offset += col_width
-
-                # If have reached the last column, start next row
-                if ((i + 1) % pdf_page.num_cols()) == 0:
-                    curr_y_offset += col_height
-                    curr_x_offset = starting_x
-
-            else:
-                curr_y_offset += col_height
-
-                # If have reached last column (not Column object but the last
-                #   column of the grid of Column objects) then start next
-                #   column
-                if ((i + 1) % pdf_page.num_rows()) == 0:
-                    curr_x_offset += col_width
-                    curr_y_offset = starting_y

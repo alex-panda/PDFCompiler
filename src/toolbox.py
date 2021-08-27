@@ -2,87 +2,159 @@
 A module providing a ToolBox for the users of the compiler to use.
 """
 import os
+import os.path as path
 from collections import namedtuple as named_tuple
 from decimal import Decimal
 
-from reportlab import rl_config
-from reportlab.lib.units import inch, cm, mm, pica, toLength
-from reportlab.lib import units, colors, pagesizes
-from reportlab.pdfbase.pdfmetrics import getFont, getRegisteredFontNames, standardFonts, registerFont, stringWidth
-from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.lib.fontfinder import FontFinder
+from fpdf import FPDF
 
 from markup import Markup, MarkupStart, MarkupEnd
 from tools import assure_decimal, trimmed, assert_instance, assert_subclass
-from constants import ALIGNMENT as _ALIGNMENT, STRIKE_THROUGH as _STRIKE_THROUGH, UNDERLINE as _UNDERLINE, \
-        FONT_FAMILIES, FONT_NAMES, FontFamily, REGISTERED_FONTS, PAGE_SIZES_DICT, UNIT as _UNIT
+from color import Color
+from constants import (ALIGNMENT as _ALIGNMENT, STRIKE_THROUGH as _STRIKE_THROUGH,
+        UNDERLINE as _UNDERLINE, FONT_FAMILIES, FONTS, FontFamily, Font,
+        PAGE_SIZES_DICT, UNIT as _UNIT, COLORS, FONT_SEARCH_PATHS,
+        STANDARD_FONTS, FONTS_TO_IMPORT, GLOBAL_FPDF, FONTS_IMPORTED_TO_GLOBAL_FPDF)
 
 
-COLORS = ('TRANSPARENT', 'ALICEBLUE', 'ANTIQUEWHITE', 'AQUA', 'AQUAMARINE', 'AZURE',
-'BEIGE', 'BISQUE', 'BLACK', 'BLANCHEDALMOND', 'BLUE', 'BLUEVIOLET', 'BROWN',
-'BURLYWOOD', 'CADETBLUE', 'CHARTREUSE', 'CHOCOLATE', 'CORAL', 'CORNFLOWERBLUE',
-'CORNSILK', 'CRIMSON', 'CYAN', 'DARKBLUE', 'DARKCYAN', 'DARKGOLDENROD',
-'DARKGRAY', 'DARKGREY', 'DARKGREEN', 'DARKKHAKI', 'DARKMAGENTA', 'DARKOLIVEGREEN',
-'DARKORANGE', 'DARKORCHID', 'DARKRED', 'DARKSALMON', 'DARKSEAGREEN', 'DARKSLATEBLUE',
-'DARKSLATEGRAY', 'DARKSLATEGREY', 'DARKTURQUOISE', 'DARKVIOLET', 'DEEPPINK',
-'DEEPSKYBLUE', 'DIMGRAY', 'DIMGREY', 'DODGERBLUE', 'FIREBRICK', 'FLORALWHITE',
-'FORESTGREEN', 'FUCHSIA', 'GAINSBORO', 'GHOSTWHITE', 'GOLD', 'GOLDENROD', 'GRAY',
-'GREY', 'GREEN', 'GREENYELLOW', 'HONEYDEW', 'HOTPINK', 'INDIANRED', 'INDIGO',
-'IVORY', 'KHAKI', 'LAVENDER', 'LAVENDERBLUSH', 'LAWNGREEN', 'LEMONCHIFFON',
-'LIGHTBLUE', 'LIGHTCORAL', 'LIGHTCYAN', 'LIGHTGOLDENRODYELLOW', 'LIGHTGREEN',
-'LIGHTGREY', 'LIGHTPINK', 'LIGHTSALMON', 'LIGHTSEAGREEN', 'LIGHTSKYBLUE',
-'LIGHTSLATEGRAY', 'LIGHTSLATEGREY', 'LIGHTSTEELBLUE', 'LIGHTYELLOW', 'LIME',
-'LIMEGREEN', 'LINEN', 'MAGENTA', 'MAROON', 'MEDIUMAQUAMARINE', 'MEDIUMBLUE',
-'MEDIUMORCHID', 'MEDIUMPURPLE', 'MEDIUMSEAGREEN', 'MEDIUMSLATEBLUE',
-'MEDIUMSPRINGGREEN', 'MEDIUMTURQUOISE', 'MEDIUMVIOLETRED', 'MIDNIGHTBLUE',
-'MINTCREAM', 'MISTYROSE', 'MOCCASIN', 'NAVAJOWHITE', 'NAVY', 'OLDLACE',
-'OLIVE', 'OLIVEDRAB', 'ORANGE', 'ORANGERED', 'ORCHID', 'PALEGOLDENROD',
-'PALEGREEN', 'PALETURQUOISE', 'PALEVIOLETRED', 'PAPAYAWHIP', 'PEACHPUFF',
-'PERU', 'PINK', 'PLUM', 'POWDERBLUE', 'PURPLE', 'RED', 'ROSYBROWN', 'ROYALBLUE',
-'SADDLEBROWN', 'SALMON', 'SANDYBROWN', 'SEAGREEN', 'SEASHELL', 'SIENNA', 'SILVER',
-'SKYBLUE', 'SLATEBLUE', 'SLATEGRAY', 'SLATEGREY', 'SNOW', 'SPRINGGREEN', 'STEELBLUE',
-'TAN', 'TEAL', 'THISTLE', 'TOMATO', 'TURQUOISE', 'VIOLET', 'WHEAT', 'WHITE', 'WHITESMOKE',
-'YELLOW', 'YELLOWGREEN', 'FIDBLUE', 'FIDRED', 'FIDLIGHTBLUE')
+_page_sizes = named_tuple('PageSize', [key for key in PAGE_SIZES_DICT])(*[value for value in PAGE_SIZES_DICT.values()])
 
-_page_sizes = named_tuple('PageSizes', [str(key) for key in PAGE_SIZES_DICT])(*[value for value in PAGE_SIZES_DICT.values()])
+_colors = named_tuple('Colors', [key for key in COLORS])(*[Color.from_str(val) for val in COLORS.values()])
 
-_colors = named_tuple('Colors', COLORS)(*[getattr(colors, color.lower()) for color in COLORS])
-_colors_dict = {color:getattr(colors, color.lower()) for color in COLORS}
-
-_sys_font_search_paths = set(rl_config.TTFSearchPath)
-
-def _font_from_font_finder(font_finder, font_name, bold_italics_states=((False, False), (True, False), (False, True), (True, True))):
+def _find_fonts(directories:list=None):
     """
-    Tries to get the font with the given font_name from the given font_finder.
-        If the font was found, a Font object is returned. Otherwise, None is returned.
+    Checks the given directories for fonts, and puts all the fonts found in them
+        into the FONTS constant and all the FontFamilies into the FONT_FAMILIES
+        constant
+
+    If directories is None, then the default system directories will be checked
+        for fonts.
     """
-    font_name = bytes(font_name, encoding='utf-8')
-    fonts_found = []
-    for bold_italics in bold_italics_states:
-        try:
-            font = font_finder.getFont(font_name, *bold_italics)
-            fonts_found.append(font)
-        except KeyError:
-            fonts_found.append(None)
+    if directories is None:
+        directories = FONT_SEARCH_PATHS
+    elif isinstance(directories, str):
+        directories = [directories]
 
-    # Figure out how many fonts were actually found
-    font_cnt = 0
-    first_font = None
-    for font in fonts_found:
-        if font is not None:
-            font_cnt += 1
+    file_paths = set()
+    for directory in directories:
+        directory = path.abspath(path.expandvars(path.expanduser(str(directory))))
 
-            if first_font is None:
-                first_font = font
+        # If the directory does not exist or is not actually a directory, then
+        #   continue on to check the rest of the directories
+        if path.isfile(directory):
+            file_paths.add(directory)
+            continue
+        elif not path.isdir(directory):
+            continue
 
-    if font_cnt == 0:
-        return None
-    elif font_cnt == 1:
-        # A single font was in the file
-        return first_font
-    else:
-        # a font family was in the file
-        return fonts_found
+        for root, dirs, files in os.walk(directory, followlinks=True):
+            for name in files:
+                file_paths.add(path.abspath(path.join(root, name)))
+
+    # We will be using the TTFontFile to test each file to see which ones
+    #   can actually be opened and parsed and thus can actually be used by the
+    #   compiler
+    from fpdf.ttfonts import TTFontFile
+
+    found_fonts = {}
+    for file_path in file_paths:
+        root, ext = path.splitext(file_path)
+
+        if ext.lower() in ('.ttf', '.ttc'):
+            font = TTFontFile()
+            try:
+                font.getMetrics(file_path)
+            except:
+                continue
+
+            # Font was successfuly found and parsed
+
+            bold = False; italics = False
+            if font.italicAngle != 0:
+                italics = True
+            if font.flags & (1 << 18):
+                bold = True
+
+            fullname = font.fullName
+
+            if isinstance(fullname, bytes):
+                fullname = fullname.decode('utf-8')
+
+            fullname = fullname.replace(' ', '')
+            family_name = font.familyName.replace(' ', '')
+
+            found_fonts[fullname] = Font(family_name, fullname, bold, italics, file_path)
+
+        else:
+            continue
+
+    FONTS.update(found_fonts)
+
+    # Now figure out FontFamilies from the fonts
+
+    def style_of_font(font):
+        """
+        Figure out what style of font the font is i.e. is it normal, bold,
+            italics, or both
+        """
+        if font.bold and font.italics:
+            style = 'bold_italics'
+        elif font.bold:
+            style = 'bold'
+        elif font.italics:
+            style = 'italics'
+        else:
+            style = 'norm'
+
+        return style
+
+    changed_font_fams = set()
+    for font in found_fonts.values():
+
+        # Retrieve the corresponding FontFamily for the font
+
+        fam_name = font.family_name
+
+        if fam_name in FONT_FAMILIES:
+            fam = FONT_FAMILIES[fam_name]
+        else:
+            fam = FONT_FAMILIES[fam_name] = FontFamily(fam_name, None, None, None, None)
+
+        # Set the style of the family for this font to this font (FontFamilies
+        #   only contain font.full_names, not Font objects)
+
+        setattr(fam, style_of_font(font), font.full_name)
+
+        changed_font_fams.add(fam_name)
+
+    # Go through and make sure that there are no None values left in any of the
+    #   font families
+    for fam_name in changed_font_fams:
+        fam = FONT_FAMILIES[fam_name]
+
+        # Find the default font for the family (the font that we will make all
+        #   None values of the family into)
+        default_font_name = None
+        for font in fam.fonts():
+
+            if font is not None:
+                default_font_name = font
+                break
+
+        if default_font_name is None:
+            # No Font was provided for the Font family so just get rid of the
+            #   empty family.
+            FONT_FAMILIES.pop(fam_name)
+            continue
+
+        # Now fill in None values of the FontFamily with the default font
+
+        for style in ['norm', 'bold', 'italics', 'bold_italics']:
+            font = getattr(fam, style)
+            if font is None:
+                setattr(fam, style, default_font_name)
+
+    return found_fonts
 
 class ToolBox:
     """
@@ -90,7 +162,7 @@ class ToolBox:
     """
     def __init__(self, compiler):
         self._compiler = compiler
-        self._full_sys_searched_font_finder = None
+        self._full_sys_searched_fonts = None
 
     # ---------------------------------
     # Provided Classes
@@ -140,18 +212,14 @@ class ToolBox:
     # Methods that allow a standard way for users to get constants from commands
 
     @staticmethod
-    def color_for_str(color_name_str):
+    def color_for_str(color_name_str, false_on_fail):
         """
         Returns a color for the given string.
         """
-        color_name_str = str(color_name_str)
-        trimmed = trimmed(color_name_str)
-        lowered = trimmed.lower()
-
-        if lowered in _colors_dict:
-            return _colors_dict[lowered]
-
-        raise AssertionError(f'{color_name_str} is not a valid name for a color.')
+        color_name_str = trimmed(str(color_name_str))
+        res = getattr(_colors, color_name_str, None)
+        if res is not None: return res
+        return Color.from_str(color_name_str, false_on_fail)
 
     @staticmethod
     def page_size_for_str(page_size_str):
@@ -170,8 +238,10 @@ class ToolBox:
     @staticmethod
     def length_for_str(string):
         """
-        Canverts string to a a length in pts
+        Canverts string to a a length (float) in pts (that way it can be used
+            on the canvas)
         """
+        string = str(string).lower()
         try:
             if string[-2:] == 'cm':
                 return float(string[:-2]) * _UNIT.CM
@@ -205,14 +275,6 @@ class ToolBox:
     def underline_for_str(script_name):
         return _UNDERLINE.validate(script_name)
 
-    @staticmethod
-    def length_for_str(length_as_str):
-        """
-        Takes a length as a string, such as '4pica' or '4mm' and converts it
-            into a Decimal of the specified size.
-        """
-        return assure_decimal(toLength(length_as_str))
-
     # ---------------------------------
     # Other Helpful Methods
 
@@ -224,18 +286,18 @@ class ToolBox:
     def assert_subclass(obj, types, var_name=None, or_none=False):
         assert_subclass(obj, types, var_name, or_none)
 
-    @staticmethod
-    def validate_font_name(font_name, return_false=False):
+    def validate_font_name(self, font_name, false_on_fail=False):
         """
         Returns True if the given font_name is registered and thus is safe
-            to use on the PDF, raises an error (if return_false is False)
-            or returns False (if return_false is True) otherwise.
+            to use on the PDF, raises an error (if false_on_fail is False)
+            or returns False (if false_on_fail is True) otherwise.
         """
-        if (font_name in FONT_FAMILIES) or (font_name in ToolBox.registered_fonts()) \
-                or (font_name in ToolBox.standard_fonts()):
+        if (font_name in self.registered_font_families()) \
+                or (font_name in self.registered_fonts()) \
+                or (font_name in self.standard_fonts()):
             return True
 
-        if return_false:
+        if false_on_fail:
             return False
         else:
             raise AssertionError(f'"{font_name}" has not been imported and thus cannot be used in the PDFDocument.')
@@ -257,92 +319,78 @@ class ToolBox:
         If font_file_paths is None, then a list of default file paths is checked
             for the font with the given font_name.
         """
-        font_name = str(font_name)
+        font_name = str(font_name).replace(' ', '')
 
-        if self.validate_font_name(font_name, True):
+        if not (font_file_paths is None or isinstance(font_file_paths, list)):
+            font_file_paths = [font_file_paths]
+
+        if (font_name in FONTS_TO_IMPORT) or (font_name in STANDARD_FONTS):
             # Font has already been registered
             return
 
-        paths_used = []
-        font_found = None
+        def try_register(font_name):
+            """
+            Try to register the font_name, returning False if the it cannot
+                be registered and True otherwise.
+            """
+            # If the name is in either of these, then the font was found
+            if font_name in FONTS:
+                FONTS_TO_IMPORT[font_name] = FONTS[font_name].file_path
+                return True
+            elif font_name in FONT_FAMILIES:
+                for fnt_name in FONT_FAMILIES[font_name].fonts():
+                    FONTS_TO_IMPORT[fnt_name] = FONTS[fnt_name].file_path
+                return True
 
-        # Since a font_file_path was given, first check it for the requested font
+            return False
+
+        if try_register(font_name):
+            return
+
+        paths_to_check = set()
+        font_found = False
+
         if font_file_paths is not None:
-            if isinstance(font_file_paths, iter):
-                paths_used.extend((str(p) for p in font_file_paths))
+            # Since a font_file_path was given, first check it for the requested font
+            if isinstance(font_file_paths, list):
+                curr_file_dir = self._compiler.curr_file_dir()
+                paths = set()
+                for p in font_file_paths:
+                    paths.add(path.normpath(path.join(curr_file_dir, str(p))))
+
+                main_file_dir = self._compiler.main_file_dir()
+                for p in font_file_paths:
+                    paths.add(path.normpath(path.join(main_file_dir, str(p))))
+
+                for p in paths:
+                    paths_to_check.add(p)
             else:
-                paths_used.append(str(font_file_paths))
+                curr_file_dir = self._compiler.curr_file_dir()
+                paths_to_check.add(path.normpath(path.join(curr_file_dir, str(font_file_paths))))
 
-            if len(paths_used) > 0:
-                # FontFinder raises an error if no directory is specified
-                #   i.e. no directories are added
+                main_file_dir = self._compiler.main_file_dir()
+                paths_to_check.add(path.normpath(path.join(main_file_dir, str(font_file_paths))))
 
-                ff = FontFinder(useCache=False)
-                ff.addDirectories(paths_used)
-                ff.search()
-                font_found = _font_from_font_finder(ff, font_name)
+            _find_fonts(font_file_paths)
 
-        # If the font was not found (it is still None) search the system for it
-        if font_found is None:
-            paths_used.extend(_sys_font_search_paths)
+            if try_register(font_name):
+                return
 
-            # search the system for the font, or, if possible, use a cached
-            #    FontFinder that has already searched the system and has stored
-            #    the fonts it found
-            if self._full_sys_searched_font_finder is None:
-                ff = self._full_sys_searched_font_finder = FontFinder(useCache=False)
-                ff.addDirectories(_sys_font_search_paths)
-                ff.search()
-            else:
-                # Cached FontFinder was available, so use it
-                ff = self._full_sys_searched_font_finder
+        if not self._full_sys_searched_fonts:
+            self.system_fonts() # Searches the fonts on the system and loads them into FONTS and FONT_FAMILIES
 
-            font_found = _font_from_font_finder(ff, font_name)
+            if try_register(font_name):
+                return
 
-        assert font_found is not None, f'Font with name "{font_name}" could not be found on this/these path(s):\n{[p for p in paths_used]}\n\n'
+        paths_used = set()
 
-        if isinstance(font_found, list):
-            # A font family was found, so register it
+        for p in font_file_paths:
+            paths_used.add(str(p))
 
-            # Find the default font (font that will be used to fill in missing fonts)
-            default_font = None
-            for font in font_found:
-                if font is not None:
-                    default_font = font
-                    break
-            else:
-                raise AssertionError(f'Font with name "{font_name}" could not be found on this/these path(s):\n{[p for p in paths_used]}\n\n')
+        for p in FONT_SEARCH_PATHS:
+            paths_used.add(str(p))
 
-            # Now fill in the fonts that are None
-            for i in range(len(font_found)):
-                if font_found[i] is None:
-                    font_found[i] = default_font
-                else:
-                    font_found_name = font_found[i].name
-                    # Register the font with reportlab
-                    registerFont(TTFont(font_found_name, font_found[i].fileName))
-
-                    if isinstance(font_found_name, bytes):
-                        font_found_name = font_found_name.decode('utf-8')
-
-                    REGISTERED_FONTS.add(font_found_name)
-
-            FONT_FAMILIES[font_name] = FontFamily(*[f.name for f in font_found])
-        else:
-            # Only one font was found
-
-            # Save the name asked for by the user and the actual name of the
-            #   font that needs to be given to reportlab to get the font
-            FONT_NAMES[font_name] = font_found.name
-
-            # Register the font with reportlab
-            registerFont(TTFont(font_found.name, font_found.fileName))
-            font_found_name = font_found.name
-
-            if isinstance(font_found_name, bytes):
-                font_found_name = font_found_name.decode('utf-8')
-
-            REGISTERED_FONTS.add(font_found_name)
+        raise AssertionError(f'Font with name "{font_name}" could not be found on this/these path(s):\n{[p for p in paths_used]}\n\n')
 
     def register_font_family(self, family_name, normal_font_name, bold_font_name, italics_font_name, bold_italics_font_name):
         """
@@ -374,57 +422,92 @@ class ToolBox:
 
         if normal_font_name in FONT_FAMILIES:
             normal_font_name = FONT_FAMILIES[normal_font_name].font(False, False)
-        elif normal_font_name in FONT_NAMES:
-            normal_font_name = FONT_NAMES[normal_font_name]
+        elif normal_font_name in FONTS:
+            normal_font_name = FONTS[normal_font_name].full_name
 
         if bold_font_name in FONT_FAMILIES:
             bold_font_name = FONT_FAMILIES[bold_font_name].font(True, False)
-        elif bold_font_name in FONT_NAMES:
-            bold_font_name = FONT_NAMES[bold_font_name]
+        elif bold_font_name in FONTS:
+            bold_font_name = FONTS[bold_font_name].full_name
 
         if italics_font_name in FONT_FAMILIES:
             italics_font_name = FONT_FAMILIES[italics_font_name].font(False, True)
-        elif italics_font_name in FONT_NAMES:
-            italics_font_name = FONT_NAMES[italics_font_name]
+        elif italics_font_name in FONTS:
+            italics_font_name = FONTS[italics_font_name].full_name
 
         if bold_italics_font_name in FONT_FAMILIES:
             bold_italics_font_name = FONT_FAMILIES[bold_italics_font_name].font(True, True)
-        elif bold_italics_font_name in FONT_NAMES:
-            bold_italics_font_name = FONT_NAMES[bold_italics_font_name]
+        elif bold_italics_font_name in FONTS:
+            bold_italics_font_name = FONTS[bold_italics_font_name].full_name
 
-        FONT_FAMILIES[str(family_name)] = FontFamily(normal_font_name, bold_font_name, italics_font_name, bold_italics_font_name)
+        FONT_FAMILIES[str(family_name)] = FontFamily(str(family_name), normal_font_name, bold_font_name, italics_font_name, bold_italics_font_name)
+
+    def fonts_in_directory(self, directory):
+        """
+        Returns a list of all the Fonts in the given directory.
+        """
+        directory = str(directory)
 
     def system_fonts(self):
         """
         Searches your system and returns a list of all the fonts available
         on your system.
+
+        Returns a dict of font_name:font_file_path  key:value  pairs
         """
-        if self._full_sys_searched_font_finder is None:
-            ff = FontFinder(useCache=False)
-            ff.addDirectories(_sys_font_search_paths)
-            ff.search()
-            self._full_sys_searched_font_finder = ff
+        if self._full_sys_searched_fonts is None:
+            sf = self._full_sys_searched_fonts = _find_fonts(FONT_SEARCH_PATHS)
         else:
-            ff = self._full_sys_searched_font_finder
+            sf = self._full_sys_searched_fonts
 
-        font_names = [f.decode("utf-8") for f in ff.getFamilyNames()]
-        return font_names
+        return {f.full_name:f.file_path for f in sf.values()}
 
-    @staticmethod
-    def standard_fonts():
+    def system_font_families(self):
         """
-        Returns a list of strings of the names of fonts that are standard.
-        """
-        return standardFonts
+        Searches your system and returns a list of all the fonts available
+        on your system.
 
-    @staticmethod
-    def registered_fonts():
+        Returns a list of fonts
+        """
+        if self._full_sys_searched_fonts is None:
+            sf = self._full_sys_searched_fonts = _find_fonts(FONT_SEARCH_PATHS)
+        else:
+            sf = self._full_sys_searched_fonts
+
+        return {f.family_name:FONT_FAMILIES[f.family_name] for f in sf.values()}
+
+    def standard_fonts(self):
+        """
+        Returns a tuple of strings of the names of fonts that are standard and
+            available in all PDFs.
+        """
+        return STANDARD_FONTS
+
+    def registered_fonts(self):
         """
         Returns a list of all registered fonts i.e. every font name that can be
             currently used. If you want more, then you need to register the new
             font.
         """
-        return [p for p in REGISTERED_FONTS]
+        return {key:value for key, value in FONTS_TO_IMPORT.items()}
+
+    def registered_font_families(self):
+        """
+        Returns a dictionary of family_name:FontFamily key:value pairs
+        """
+        registered_font_families = {}
+        for font_name in FONTS_TO_IMPORT:
+            font = FONTS[font_name]
+
+            fam_name = font.family_name
+
+            fam = FONT_FAMILIES[fam_name]
+            registered_font_families[fam_name] = fam
+
+        for fam_name in ('Times', 'Courier', 'Helvetica', 'Symbol', 'Zapfdingbats'):
+            registered_font_families[fam_name] = FONT_FAMILIES[fam_name]
+
+        return registered_font_families
 
     @staticmethod
     def assure_landscape(page_size):
@@ -460,10 +543,36 @@ class ToolBox:
         Returns the (width, height) of the given string based on the given
             text_info object.
         """
-        font_name = text_info.working_font_name()
+        font_name = str(text_info.working_font_name())
         font_size = text_info.font_size()
 
-        assert isinstance(font_name, (str, bytes)), f'The font_name of the given text_info must be of type str, not {font_name}'
+        assert isinstance(font_name, str), f'The font_name of the given text_info must be of type str, not {font_name}'
         assert isinstance(font_size, (int, float, Decimal)), f'The font_size of the given text_info must be of type int, float, or Decimal, not {font_name}'
 
-        return Decimal(stringWidth(string, font_name, font_size)), (font_size)
+        #print(f'FONTS: {FONTS}')
+        #print(f'FONT_FAMILIES: {FONT_FAMILIES}')
+
+        if not (font_name in FONTS_IMPORTED_TO_GLOBAL_FPDF):
+            not_found = True
+            if font_name in FONTS:
+                GLOBAL_FPDF.add_font(font_name, fname=FONTS[font_name].file_path, uni=True)
+                FONTS_IMPORTED_TO_GLOBAL_FPDF.add(font_name)
+                not_found = False
+            elif font_name in FONT_FAMILIES:
+                fam = FONT_FAMILIES[font_name]
+                for font_nm in  fam.fonts():
+                    if font_nm in FONTS:
+                        GLOBAL_FPDF.add_font(font_nm, fname=FONTS[font_nm].file_path, uni=True)
+                        FONTS_IMPORTED_TO_GLOBAL_FPDF.add(font_nm)
+                not_found = False
+            elif font_name in STANDARD_FONTS:
+                not_found = False
+
+            if not_found:
+                raise AssertionError(f'The font "{font_name}" needs to be imported before its use')
+
+        text_info.apply_to_canvas(GLOBAL_FPDF)
+
+        return (Decimal(GLOBAL_FPDF.get_string_width(string)), Decimal(font_size))
+
+

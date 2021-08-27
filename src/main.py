@@ -2,7 +2,7 @@ from compiler import Compiler, Error
 from constants import OUT_TAB, STD_DIR
 import os
 
-def main(input_file_path, output_file_path=None, print_progress_bars=False):
+def main(input_file_path, output_file_path=None, print_progress_bars=False, encoding='utf-8'):
     """
     Takes a file path to the input plaintext file and a file path to the output
         file.
@@ -24,7 +24,7 @@ def main(input_file_path, output_file_path=None, print_progress_bars=False):
         output_file_path = '.'.join(output_file_path)
 
     try:
-        c = Compiler(input_file_path, os.path.abspath(STD_DIR), print_progress_bars)
+        c = Compiler(input_file_path, os.path.abspath(STD_DIR), print_progress_bars, encoding)
         c.compile_and_draw_pdf(output_file_path)
     except Error as e:
         return e
@@ -37,9 +37,11 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser(description='A program that compiles pdfs from plain-text files.')
     p.add_argument('input_file_path', type=str,
             help='The path to the main file that you are compiling from.')
-    p.add_argument('-o', '--output_file_path', type=str, nargs='?', const=None,
+    p.add_argument('-o', '--output_file_path', type=str, nargs='?', default=None,
             help='The path to the output file you want. Without this, the output file is just the input file path with the ending changed to .pdf')
-    #p.add_argument('-f', '--verbosity', type=int,
+    p.add_argument('-e', '--encoding', type=str, nargs='?', default='utf-8',
+            help='The encoding that your files are in. For example, if your files are in utf-32, then specify utf-32. The default encoding is utf-8.')
+    #p.add_argument('-v', '--verbosity', type=int,
             #help='The level of logging you want.')
     #p.add_argument('-c', '--continous', action="store_true",
             #help='Continuouly compile the file every time it is resaved.')
@@ -64,7 +66,7 @@ if __name__ == "__main__":
     if args.no_progress:
         print(f'{OUT_TAB}.\n{OUT_TAB}.\n{OUT_TAB}.')
 
-    res = main(args.input_file_path, args.output_file_path, not args.no_progress)
+    res = main(args.input_file_path, args.output_file_path, not args.no_progress, args.encoding)
 
     if not isinstance(res, str):
         print('\n\nAn Error Occured\n', end='')

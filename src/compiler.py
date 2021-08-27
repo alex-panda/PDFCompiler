@@ -2153,7 +2153,7 @@ class Interpreter:
         if command_to_call is None:
             # The command is undefined
             return res.failure(RunTimeError(node.cmnd_name.start_pos.copy(), node.cmnd_name.end_pos.copy(),
-                '\\' + f'"{cmnd_name_str}" is not defined at this point in the code.',
+                '"\\' + f'{cmnd_name_str}" is undefined.',
                 context
                 ))
         elif isinstance(command_to_call, TextGroupNode):
@@ -2254,12 +2254,12 @@ class Interpreter:
                 # Visit the argument node and get the tokens from it
                 new_tokens = res.register(self.visit(arg, context, flags))
 
+                if res.error:
+                    return res
+
                 # Convert the tokens to MarkedUpText, something that can be used
                 #   in Python
                 marked_up_text = Tokenizer.marked_up_text_for_tokens(new_tokens)
-
-                if res.error:
-                    return res
 
                 if marked_up_text == '<NONE>':
                     marked_up_text = None
@@ -2412,7 +2412,7 @@ class Compiler:
     """
     This object orchestrates the compilation of plaintext files into PDFs
     """
-    def __init__(self, input_file_path, path_to_std_dir, print_progess_bars=False):
+    def __init__(self, input_file_path, path_to_std_dir, print_progess_bars=False, encoding='utf-8'):
         self._commands = {}
         self._files_by_path = {}
         assert path.isfile(input_file_path), f'The given path is not to a file or does not exist: {input_file_path}'
@@ -2420,6 +2420,7 @@ class Compiler:
         self._input_file_dir = path.dirname(input_file_path)
         self._std_dir_path = path_to_std_dir
         self._print_progress_bars = print_progess_bars
+        self._encoding = encoding # The encoding that the pdfo files are in
 
         self._toolbox = ToolBox(self)
         self._compiler_poxy = CompilerProxy(self)
@@ -2453,7 +2454,10 @@ class Compiler:
         # Now run the main\input file
         self._insert_file(self._input_file_path, fresh_context, print_progress=self._print_progress_bars)
 
-        return self._placer_class(fresh_context.token_document(), fresh_context.globals(), self._input_file_path, self._print_progress_bars).create_pdf()
+        from placer.token_stream import TokenStream
+        return TokenStream(fresh_context.token_document(), self._placer_class,
+                fresh_context.globals(), self._input_file_path,
+                self._print_progress_bars).place_tokens()
 
     def compile_and_draw_pdf(self, output_pdf_path):
         """
@@ -2547,23 +2551,10 @@ class Compiler:
         self._files_by_path[file_path] = file
 
         try:
-            with open(file_path) as f:
+            with open(file_path, encoding=self._encoding) as f:
                 file.raw_text = f.read() # Raw text that the file contains
         except:
-            try:
-                with open(file_path, encoding='utf-8') as f:
-                    file.raw_text = f.read() # Raw text that the file contains
-
-            except:
-                try:
-                    with open(file_path, encoding='utf-16') as f:
-                        file.raw_text = f.read() # Raw text that the file contains
-                except:
-                    try:
-                        with open(file_path, encoding='utf-32') as f:
-                            file.raw_text = f.read() # Raw text that the file contains
-                    except:
-                        raise AssertionError('Could not decode the given file as utf-8, utf-16, or utf-32.')
+            raise AssertionError(f'Could not decode the given file as {self._encoding}.')
 
 
         file.tokens = Tokenizer(file.file_path, file.raw_text, print_progress_bar=print_progress).tokenize()

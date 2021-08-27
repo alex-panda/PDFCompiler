@@ -1,17 +1,18 @@
-# Warning: Much of what is written below is just planned and not yet implemented.
+### Warning: Much of what is written below is just planned and not yet implemented.
 
 
 # PDFCompiler
+
+This is a compiler that takes a plain-text input file and compiles it into a
+    custom PDF using Python. Python can be embeded in the file (written
+    directly in designated areas of the file) and can directly change what the
+    PDF will look like in the end, or you can completely ignore the python and
+    use the commands instead.
 
 NOTE: You do not need to use any Python if you want to use this Compiler.
     You can peek at the Command Sequences section if you want to see the
     super-easy commands you can use to change your text without any
     Python whatsoever.
-
-This is a program that takes a plain-text input file and compiles it into a
-    custom PDF using Python. In fact, Python can be embeded in the file
-    (written directly in designated areas of the file) and can directly
-    change what the PDF will look like in the end.
 
 ## Getting Started
 
@@ -60,4 +61,3 @@ Another VERY important thing to know is that the first pass is just that, a
     this is the pass you want to be doing things like changing your fonts and
     bolding your text because this is where it will actually be done.
 
-The fact that there is 

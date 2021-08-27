@@ -165,8 +165,17 @@ PB_NUM_TABS = 1 # Number of tabs before the printed value
 OUT_TAB = 6 * ' '
 
 class FontFamily:
-    __slots__ = ['norm', 'bold', 'italics', 'bold_italics']
-    def __init__(self, norm_font_name, bold_font_name, italics_font_name, bold_italics_font_name):
+    """
+    A family of fonts i.e. a group of fonts that, together, allow you to create
+        the affect of bolding or italisizing text.
+
+    A FontFamily only holds the names of the fonts that make it up. If you want
+        more information on the Font then you should look up the font in the
+        FONTS dict
+    """
+    __slots__ = ['name', 'norm', 'bold', 'italics', 'bold_italics', 'fallback_font']
+    def __init__(self, name, norm_font_name:str, bold_font_name:str, italics_font_name:str, bold_italics_font_name:str):
+        self.name = name
         self.norm = norm_font_name
         self.bold = bold_font_name
         self.italics = italics_font_name
@@ -186,27 +195,67 @@ class FontFamily:
         else:
             return self.norm
 
+    def fonts(self):
+        """
+        Returns a list of the fonts of this font family in [norm, bold, italics,
+            bold_italics] order
+        """
+        return [self.font(bold, italics) \
+                for bold, italics in \
+                ((False, False), (True, False), (False, True), (True, True))]
+
+    def __repr__(self):
+        return f'FontFamily(norm={self.norm}, bold={self.bold}, italics={self.italics}, bold_italics={self.bold_italics})'
+
+class Font:
+    """
+    Holds all the information pertaining to a font. Font Families hold only the
+        names of a Font, not Font objects.
+    """
+    __slots__ = ['family_name', 'full_name', 'bold', 'italics', 'file_path']
+    def __init__(self, family_name:str, full_name:str, bold:bool, italics:bool, file_path:str=None):
+        self.family_name = family_name
+        self.full_name = full_name
+        self.bold = bold
+        self.italics = italics
+        self.file_path = file_path
+
+    def __repr__(self):
+        return f'Font(family={self.family_name}, full_name={self.full_name}, bold={self.bold}, italics={self.italics})'
+
+# Dict of all found FontFamilies
 FONT_FAMILIES = {
-    'Times': FontFamily('Times-Roman', 'Times-Bold', 'Times-Italic', 'Times-BoldItalic'),
-    'Courier': FontFamily('Courier', 'Courier-Bold', 'Courier-Oblique', 'Courier-BoldOblique'),
-    'Helvetica': FontFamily('Helvetica', 'Helvetica-Bold', 'Helvetica-Oblique', 'Helvetica-BoldOblique'),
-    'Symbol': FontFamily('Symbol', 'Symbol', 'Symbol', 'Symbol'),
-    'ZapfDingbats': FontFamily('ZapfDingbats', 'ZapfDingbats', 'ZapfDingbats', 'ZapfDingbats')
+    'Times':        FontFamily('Times', 'Times', 'TimesB', 'TimesI', 'TimesBI'),
+    'Courier':      FontFamily('Courier', 'Courier', 'CourierB', 'CourierI', 'CourierBI'),
+    'Helvetica':    FontFamily('Helvetica', 'Helvetica', 'HelveticaB', 'HelveticaI', 'HelveticaBI'),
+    'Symbol':       FontFamily('Symbol', 'Symbol', 'Symbol', 'Symbol', 'Symbol'),
+    'Zapfdingbats': FontFamily('Zapfdingbats', 'Zapfdingbats', 'Zapfdingbats', 'Zapfdingbats', 'Zapfdingbats')
 }
 
-# The fonts found on the operating system are not always named the same as they
-# were asked for by the user. This Dictionary will save the name the user asked
-# for with the name of the actual font on the system in key:value pairs.
-# This dictionary is specifically for the fonts imported that are not in a font
-# family and are, instead, standalone fonts
-FONT_NAMES = {}
+# Dict of all found Fonts with their keys being their full names. These are the
+#   fonts that make up the font families
+FONTS = {
+    #Font('Times', 'Times', False, False, None),
+}
 
-# Registered font names because the ones registered by reportlab are sorted
-#   when you try to retrieve them which is causing errors
-REGISTERED_FONTS = set(['Times-Roman', 'Times-Bold', 'Times-Italic', 'Times-BoldItalic',
-        'Courier', 'Courier-Bold', 'Courier-Oblique', 'Courier-BoldOblique',
-        'Helvetica', 'Helvetica-Bold', 'Helvetica-Oblique', 'Helvetica-BoldOblique',
-        'Symbol', 'ZapfDingbats'])
+# Fonts that are standard to all PDFs and do not have to be somewhere on the
+#   computer's filesystem
+STANDARD_FONTS = set([
+        'Times',     'TimesB',     'TimesI',     'TimesBI',
+        'Courier',   'CourierB',   'CourierI',   'CourierBI',
+        'Helvetica', 'HelveticaB', 'HelveticaI', 'HelveticaBI',
+        'Symbol',    'Zapfdingbats'])
+
+# A dictionary of fonts that should be imported with
+#   font_name: font_file_path      pairs
+FONTS_TO_IMPORT = {}
+FONTS_IMPORTED_TO_GLOBAL_FPDF = set()
+DIRS_CHECKED_FOR_FONTS = set()
+
+# Used to calculate the widths of strings because you need a FPDF object to do
+#   that
+from fpdf import FPDF
+GLOBAL_FPDF =  FPDF(unit='pt', font_cache_dir=None)
 
 # -----------------------------------------------------------------------------
 # API Constants (Constants that people compiling their pdf might actually see)
@@ -285,47 +334,264 @@ PAGE_SIZES_DICT = {
     "B12": (15   * UNIT.MM, 22   * UNIT.MM),
     "B13": (11   * UNIT.MM, 15   * UNIT.MM),
 
-    "C0":  (917 * UNIT.MM, 1297 * UNIT.MM),
-    "C1":  (648 * UNIT.MM, 917  * UNIT.MM),
-    "C2":  (458 * UNIT.MM, 648  * UNIT.MM),
-    "C3":  (324 * UNIT.MM, 458  * UNIT.MM),
-    "C4":  (229 * UNIT.MM, 324  * UNIT.MM),
-    "C5":  (162 * UNIT.MM, 229  * UNIT.MM),
-    "C6":  (114 * UNIT.MM, 162  * UNIT.MM),
-    "C7":  (81  * UNIT.MM, 114  * UNIT.MM),
-    "C8":  (57  * UNIT.MM, 81   * UNIT.MM),
-    "C9":  (40  * UNIT.MM, 57   * UNIT.MM),
-    "C10": (28  * UNIT.MM, 40   * UNIT.MM),
+    "C0":  (917  * UNIT.MM, 1297 * UNIT.MM),
+    "C1":  (648  * UNIT.MM, 917  * UNIT.MM),
+    "C2":  (458  * UNIT.MM, 648  * UNIT.MM),
+    "C3":  (324  * UNIT.MM, 458  * UNIT.MM),
+    "C4":  (229  * UNIT.MM, 324  * UNIT.MM),
+    "C5":  (162  * UNIT.MM, 229  * UNIT.MM),
+    "C6":  (114  * UNIT.MM, 162  * UNIT.MM),
+    "C7":  (81   * UNIT.MM, 114  * UNIT.MM),
+    "C8":  (57   * UNIT.MM, 81   * UNIT.MM),
+    "C9":  (40   * UNIT.MM, 57   * UNIT.MM),
+    "C10": (28   * UNIT.MM, 40   * UNIT.MM),
 
-    "D0":  (771 * UNIT.MM, 1090 * UNIT.MM),
-    "D1":  (545 * UNIT.MM, 771  * UNIT.MM),
-    "D2":  (385 * UNIT.MM, 545  * UNIT.MM),
-    "D3":  (272 * UNIT.MM, 385  * UNIT.MM),
-    "D4":  (192 * UNIT.MM, 272  * UNIT.MM),
-    "D5":  (136 * UNIT.MM, 192  * UNIT.MM),
-    "D6":  (96  * UNIT.MM, 136  * UNIT.MM),
-    "D7":  (68  * UNIT.MM, 96   * UNIT.MM),
-    "D8":  (48  * UNIT.MM, 68   * UNIT.MM),
+    "D0":  (771  * UNIT.MM, 1090 * UNIT.MM),
+    "D1":  (545  * UNIT.MM, 771  * UNIT.MM),
+    "D2":  (385  * UNIT.MM, 545  * UNIT.MM),
+    "D3":  (272  * UNIT.MM, 385  * UNIT.MM),
+    "D4":  (192  * UNIT.MM, 272  * UNIT.MM),
+    "D5":  (136  * UNIT.MM, 192  * UNIT.MM),
+    "D6":  (96   * UNIT.MM, 136  * UNIT.MM),
+    "D7":  (68   * UNIT.MM, 96   * UNIT.MM),
+    "D8":  (48   * UNIT.MM, 68   * UNIT.MM),
 }
 
-def landscape(page_size):
-    """
-    Makes sure that no matter what page size is given, it is returned in
-        landscape format, whether it was already in landscap or not.
-    """
-    a, b = page_size
-    if a < b:
-        return (b, a)
-    else:
-        return (a, b)
 
-def portrait(page_size):
-    """
-    The Page size returned is the given page size in portrait orientation, even
-        if it was already in portrait orientation.
-    """
-    a, b = page_size
-    if a >= b:
-        return (b, a)
-    else:
-        return (a, b)
+# For now, COLORS just contains all the standard Hexidecimal colors in hex form
+COLORS = {
+    'ALICEBLUE': '#F0F8FF',
+    'ANTIQUEWHITE': '#FAEBD7',
+    'AQUA': '#00FFFF',
+    'AQUAMARINE': '#7FFFD4',
+    'AZURE': '#F0FFFF',
+    'BEIGE': '#F5F5DC',
+    'BISQUE': '#FFE4C4',
+    'BLACK': '#000000',
+    'BLANCHEDALMOND': '#FFEBCD',
+    'BLUE': '#0000FF',
+    'BLUEVIOLET': '#8A2BE2',
+    'BROWN': '#A52A2A',
+    'BURLYWOOD': '#DEB887',
+    'CADETBLUE': '#5F9EA0',
+    'CHARTREUSE': '#7FFF00',
+    'CHOCOLATE': '#D2691E',
+    'CORAL': '#FF7F50',
+    'CORNFLOWERBLUE': '#6495ED',
+    'CORNSILK': '#FFF8DC',
+    'CRIMSON': '#DC143C',
+    'CYAN': '#00FFFF',
+    'DARKBLUE': '#00008B',
+    'DARKCYAN': '#008B8B',
+    'DARKGOLDENROD': '#B8860B',
+    'DARKGRAY': '#A9A9A9',
+    'DARKGREY': '#A9A9A9',
+    'DARKGREEN': '#006400',
+    'DARKKHAKI': '#BDB76B',
+    'DARKMAGENTA': '#8B008B',
+    'DARKOLIVEGREEN': '#556B2F',
+    'DARKORANGE': '#FF8C00',
+    'DARKORCHID': '#9932CC',
+    'DARKRED': '#8B0000',
+    'DARKSALMON': '#E9967A',
+    'DARKSEAGREEN': '#8FBC8F',
+    'DARKSLATEBLUE': '#483D8B',
+    'DARKSLATEGRAY': '#2F4F4F',
+    'DARKSLATEGREY': '#2F4F4F',
+    'DARKTURQUOISE': '#00CED1',
+    'DARKVIOLET': '#9400D3',
+    'DEEPPINK': '#FF1493',
+    'DEEPSKYBLUE': '#00BFFF',
+    'DIMGRAY': '#696969',
+    'DIMGREY': '#696969',
+    'DODGERBLUE': '#1E90FF',
+    'FIREBRICK': '#B22222',
+    'FLORALWHITE': '#FFFAF0',
+    'FORESTGREEN': '#228B22',
+    'FUCHSIA': '#FF00FF',
+    'GAINSBORO': '#DCDCDC',
+    'GHOSTWHITE': '#F8F8FF',
+    'GOLD': '#FFD700',
+    'GOLDENROD': '#DAA520',
+    'GRAY': '#808080',
+    'GREY': '#808080',
+    'GREEN': '#008000',
+    'GREENYELLOW': '#ADFF2F',
+    'HONEYDEW': '#F0FFF0',
+    'HOTPINK': '#FF69B4',
+    'INDIANRED': '#CD5C5C',
+    'INDIGO': '#4B0082',
+    'IVORY': '#FFFFF0',
+    'KHAKI': '#F0E68C',
+    'LAVENDER': '#E6E6FA',
+    'LAVENDERBLUSH': '#FFF0F5',
+    'LAWNGREEN': '#7CFC00',
+    'LEMONCHIFFON': '#FFFACD',
+    'LIGHTBLUE': '#ADD8E6',
+    'LIGHTCORAL': '#F08080',
+    'LIGHTCYAN': '#E0FFFF',
+    'LIGHTGOLDENRODYELLOW': '#FAFAD2',
+    'LIGHTGRAY': '#D3D3D3',
+    'LIGHTGREY': '#D3D3D3',
+    'LIGHTGREEN': '#90EE90',
+    'LIGHTPINK': '#FFB6C1',
+    'LIGHTSALMON': '#FFA07A',
+    'LIGHTSEAGREEN': '#20B2AA',
+    'LIGHTSKYBLUE': '#87CEFA',
+    'LIGHTSLATEGRAY': '#778899',
+    'LIGHTSLATEGREY': '#778899',
+    'LIGHTSTEELBLUE': '#B0C4DE',
+    'LIGHTYELLOW': '#FFFFE0',
+    'LIME': '#00FF00',
+    'LIMEGREEN': '#32CD32',
+    'LINEN': '#FAF0E6',
+    'MAGENTA': '#FF00FF',
+    'MAROON': '#800000',
+    'MEDIUMAQUAMARINE': '#66CDAA',
+    'MEDIUMBLUE': '#0000CD',
+    'MEDIUMORCHID': '#BA55D3',
+    'MEDIUMPURPLE': '#9370DB',
+    'MEDIUMSEAGREEN': '#3CB371',
+    'MEDIUMSLATEBLUE': '#7B68EE',
+    'MEDIUMSPRINGGREEN': '#00FA9A',
+    'MEDIUMTURQUOISE': '#48D1CC',
+    'MEDIUMVIOLETRED': '#C71585',
+    'MIDNIGHTBLUE': '#191970',
+    'MINTCREAM': '#F5FFFA',
+    'MISTYROSE': '#FFE4E1',
+    'MOCCASIN': '#FFE4B5',
+    'NAVAJOWHITE': '#FFDEAD',
+    'NAVY': '#000080',
+    'OLDLACE': '#FDF5E6',
+    'OLIVE': '#808000',
+    'OLIVEDRAB': '#6B8E23',
+    'ORANGE': '#FFA500',
+    'ORANGERED': '#FF4500',
+    'ORCHID': '#DA70D6',
+    'PALEGOLDENROD': '#EEE8AA',
+    'PALEGREEN': '#98FB98',
+    'PALETURQUOISE': '#AFEEEE',
+    'PALEVIOLETRED': '#DB7093',
+    'PAPAYAWHIP': '#FFEFD5',
+    'PEACHPUFF': '#FFDAB9',
+    'PERU': '#CD853F',
+    'PINK': '#FFC0CB',
+    'PLUM': '#DDA0DD',
+    'POWDERBLUE': '#B0E0E6',
+    'PURPLE': '#800080',
+    'REBECCAPURPLE': '#663399',
+    'RED': '#FF0000',
+    'ROSYBROWN': '#BC8F8F',
+    'ROYALBLUE': '#4169E1',
+    'SADDLEBROWN': '#8B4513',
+    'SALMON': '#FA8072',
+    'SANDYBROWN': '#F4A460',
+    'SEAGREEN': '#2E8B57',
+    'SEASHELL': '#FFF5EE',
+    'SIENNA': '#A0522D',
+    'SILVER': '#C0C0C0',
+    'SKYBLUE': '#87CEEB',
+    'SLATEBLUE': '#6A5ACD',
+    'SLATEGRAY': '#708090',
+    'SLATEGREY': '#708090',
+    'SNOW': '#FFFAFA',
+    'SPRINGGREEN': '#00FF7F',
+    'STEELBLUE': '#4682B4',
+    'TAN': '#D2B48C',
+    'TEAL': '#008080',
+    'THISTLE': '#D8BFD8',
+    'TOMATO': '#FF6347',
+    'TURQUOISE': '#40E0D0',
+    'VIOLET': '#EE82EE',
+    'WHEAT': '#F5DEB3',
+    'WHITE': '#FFFFFF',
+    'WHITESMOKE': '#F5F5F5',
+    'YELLOW': '#FFFF00',
+    'YELLOWGREEN': '#9ACD32',
+}
+
+import os.path as path
+
+# The default paths to look at for fonts on the system
+FONT_SEARCH_PATHS = set([
+    # Places for T1 type fonts
+    'c:/Program Files/Adobe/Acrobat 9.0/Resource/Font',
+    'c:/Program Files/Adobe/Acrobat 8.0/Resource/Font',
+    'c:/Program Files/Adobe/Acrobat 7.0/Resource/Font',
+    'c:/Program Files/Adobe/Acrobat 6.0/Resource/Font',
+    'c:/Program Files/Adobe/Acrobat 5.0/Resource/Font',
+    'c:/Program Files/Adobe/Acrobat 4.0/Resource/Font',
+    'c:/Program Files (x86)/Adobe/Acrobat 9.0/Resource/Font',
+    'c:/Program Files (x86)/Adobe/Acrobat 8.0/Resource/Font',
+    'c:/Program Files (x86)/Adobe/Acrobat 7.0/Resource/Font',
+    'c:/Program Files (x86)/Adobe/Acrobat 6.0/Resource/Font',
+    'c:/Program Files (x86)/Adobe/Acrobat 5.0/Resource/Font',
+    'c:/Program Files (x86)/Adobe/Acrobat 4.0/Resource/Font',
+    'C:/Program Files (x86)/Adobe/Acrobat Reader DC/Resource/Font',
+    '/usr/lib/Acrobat9/Resource/Font',
+    '/usr/lib/Acrobat8/Resource/Font',
+    '/usr/lib/Acrobat7/Resource/Font',
+    '/usr/lib/Acrobat6/Resource/Font',
+    '/usr/lib/Acrobat5/Resource/Font',
+    '/usr/lib/Acrobat4/Resource/Font',
+    '/usr/local/Acrobat9/Resource/Font',
+    '/usr/local/Acrobat8/Resource/Font',
+    '/usr/local/Acrobat7/Resource/Font',
+    '/usr/local/Acrobat6/Resource/Font',
+    '/usr/local/Acrobat5/Resource/Font',
+    '/usr/local/Acrobat4/Resource/Font',
+    '/usr/share/fonts/default/Type1',
+    '~/fonts',
+    '~/.fonts',
+    '~/.local/share/fonts',
+
+    # Places for TT fonts
+    'c:/winnt/fonts',
+    'c:/windows/fonts',
+    '/usr/lib/X11/fonts/TrueType/',
+    '/usr/share/fonts/truetype',
+    '/usr/share/fonts',
+    '/usr/share/fonts/dejavu',
+    '~/fonts',
+    '~/.fonts',
+    '~/.local/share/fonts',
+
+    # The path to the fonts that come with the compiler
+    f'{path.normpath(path.join(path.dirname(__file__), "Fonts"))}',
+
+    '~/Library/Fonts',
+    '/Library/Fonts',
+    '/Network/Library/Fonts',
+    '/System/Library/Fonts',
+
+    # Places for CMAP fonts
+    '/usr/lib/Acrobat9/Resource/CMap',
+    '/usr/lib/Acrobat8/Resource/CMap',
+    '/usr/lib/Acrobat7/Resource/CMap',
+    '/usr/lib/Acrobat6/Resource/CMap',
+    '/usr/lib/Acrobat5/Resource/CMap',
+    '/usr/lib/Acrobat4/Resource/CMap',
+    '/usr/local/Acrobat9/Resource/CMap',
+    '/usr/local/Acrobat8/Resource/CMap',
+    '/usr/local/Acrobat7/Resource/CMap',
+    '/usr/local/Acrobat6/Resource/CMap',
+    '/usr/local/Acrobat5/Resource/CMap',
+    '/usr/local/Acrobat4/Resource/CMap',
+    'C:/Program Files/Adobe/Acrobat/Resource/CMap',
+    'C:/Program Files/Adobe/Acrobat 9.0/Resource/CMap',
+    'C:/Program Files/Adobe/Acrobat 8.0/Resource/CMap',
+    'C:/Program Files/Adobe/Acrobat 7.0/Resource/CMap',
+    'C:/Program Files/Adobe/Acrobat 6.0/Resource/CMap',
+    'C:/Program Files/Adobe/Acrobat 5.0/Resource/CMap',
+    'C:/Program Files/Adobe/Acrobat 4.0/Resource/CMap',
+    'C:/Program Files (x86)/Adobe/Acrobat 9.0/Resource/CMap',
+    'C:/Program Files (x86)/Adobe/Acrobat 8.0/Resource/CMap',
+    'C:/Program Files (x86)/Adobe/Acrobat 7.0/Resource/CMap',
+    'C:/Program Files (x86)/Adobe/Acrobat 6.0/Resource/CMap',
+    'C:/Program Files (x86)/Adobe/Acrobat 5.0/Resource/CMap',
+    'C:/Program Files (x86)/Adobe/Acrobat 4.0/Resource/CMap',
+    '~/fonts/CMap',
+    '~/.fonts/CMap',
+    '~/.local/share/fonts/CMap',
+    ]
+)

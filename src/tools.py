@@ -10,6 +10,18 @@ def assure_decimal(val):
     """
     return Decimal(val)
 
+def str_to_tuple(string, false_on_fail=False):
+    """
+    Takes in a string and attempts to turn it into a tuple. All elements will
+        be of type str
+    """
+    try:
+        return tuple(trimmed(str(string)).strip('(').strip(')').split(', '))
+    except:
+        if false_on_fail:
+            return False
+        raise ValueError(f'{string} could not be turned into a tuple')
+
 def time_to_str(time_in_seconds):
     """
     Takes a time in Seconds and converts it to a string displaying it
@@ -173,12 +185,12 @@ def assert_subclass(obj, types, var_name=None, or_none=True):
         raise AssertionError(string)
 
 
-def draw_str(canvas_obj, point_obj, string:str):
+def draw_str(canvas, point_obj, string:str):
     """
     Draws a string at the given Point on the given canvas.
     """
     #print(f'{point_obj}, {string}')
-    canvas_obj.drawString(float(point_obj.x()), float(point_obj.y()), string)
+    canvas.text(float(point_obj.x()), float(point_obj.y()), string)
 
 
 def is_escaped(pos, text, chars_that_can_be_escaped):
@@ -231,7 +243,7 @@ def trimmed(string):
     if first_index is None or last_index is None:
         return ''
     else:
-        return string[first_index:last_index]
+        return string[first_index:last_index + 1]
 
 
 def exec_python(code, exec_globals:dict, exec_locals:dict=None):
