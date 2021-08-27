@@ -1,50 +1,55 @@
 ### Warning: Much of what is written below is just planned and not yet implemented.
 
-
 # PDFCompiler
 
-This is a compiler that takes a plain-text input file and compiles it into a
-    custom PDF using Python. Python can be embeded in the file (written
-    directly in designated areas of the file) and can directly change what the
-    PDF will look like in the end, or you can completely ignore the python and
-    use the commands instead.
+A compiler that creates richtext PDFs (the PDF's text is bolded, italicized,
+    underlined, etc.) from plain text files such as .txt files. Enriching
+    your the document's text can be done either through Command Sequences,
+    which are an excedingly simple to use, or through the use of the programming
+    language Python which can be embeded directly in your documents (i.e. you
+    can designate Python code directly in your plain text document and the
+    compiler will run the code).
 
-NOTE: You do not need to use any Python if you want to use this Compiler.
-    You can peek at the Command Sequences section if you want to see the
-    super-easy commands you can use to change your text without any
-    Python whatsoever.
-
-## Getting Started
-
-You actually do not need to put any Python in your files if you do not
-    want to. Just write some text in a file like so:
-
-    Hello. Testing, 1, 2, 3.
-
-    and then compile it using python compile.py ./path/to/your/file.pdfo
-
-    Then it will be compiled and you should get a nice output PDF with the
-    text being laid out in a paragraph format. But you probably want more than
-    that, in which case you just need to know about commands and what they can
-    do.
+A short introduction to the compiler is provided below and a tutorial is
+    provided in the tutorial folder.
 
 ## Command Sequences
 
-If you are coming from latex, these should be familiar to you. They allow
-    you to conveniently specify text to run code on and "command" the given
-    text be a certain way. These include, but are not limited to:
+If you are coming from LaTeX, these should be familiar to you. They allow
+    you to conveniently "command" text be a certain way. You use a backslash
+    "\" and then the name of a command to specify what command you want to
+    use, and then you given the command "arguments" by putting the text you
+    want to command inside curly bracktes "{}". A few examples would be:
 
-    \bold{text to bold}
-    \it{text to italisize}
+    \b{text to bold}
+    \i{text to italisize}
     \underline{text to underline}
-    \font{name of font to change to}{text to change to specified font}
+    \font{name of font to change to}{size of font}{text to change to
+        specified font and font size}
 
-    These are what most people will use most of the time because of how
-    convenient they are to use, but do realize that most of them are just
-    wrappers for python code so if you want to do something Hyper-Complex
-    or that noone has written a package for yet, you will probably need
-    to know a bit of Python, but 99% of what most people will want to do
-    can be done through Command Sequences alone.
+    As you can see, not all commands take just one argument. Some take
+    additional arguments such as the name of a font and the size of the font.
+
+    Some commands also store information that will be added to the meta-data
+    of the PDF. A few examples include:
+
+    \title{The Title of Your PDF}
+    \author{The Author of Your PDF}
+    \created{The Creation Date of the PDF}
+
+    Other commands take no arguments at all. An example of this would be
+
+    \available_fonts
+
+    which searches the most common places for fonts to be on your computer and
+    writes the names of the fonts it found on your PDF. This command in
+    particular is meant to help you figure out what fonts you have available
+    to use in your PDF.
+
+Commands are what most people will use majority of the time because of how
+    convenient they are, but do realize that most of them are just wrappers for
+    python code so there is nothing that you can do with commands that you
+    cannot do with Python, commands are just far more convenient.
 
 ## Python Integration
 
