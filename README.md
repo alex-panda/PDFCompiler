@@ -76,7 +76,7 @@ of the command it will raise an error because it is undefined. This means that
 the scope of arguments only extend to the inside of the command that
 they are an argument for and they cannot be used outside the command.
 
-Commands are what most people will use majority of the time because of how
+Commands are what most people will use the majority of the time because of how
 convenient they are, but do realize that most of them are just wrappers for
 python code so there is nothing that you can do with commands that you cannot
 do with Python, commands are just far more convenient.
