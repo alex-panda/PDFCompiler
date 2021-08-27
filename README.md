@@ -5,8 +5,8 @@
 A compiler that creates richtext PDFs (the PDF's text is bolded, italicized,
     underlined, etc.) from plain text files such as .txt files. Enriching
     the document's text can be done either through Command Sequences,
-    which are an excedingly simple to use, or through the use of the programming
-    language Python which can be embeded directly in your documents (i.e. you
+    which are a excedingly simple to use, or through the use of the programming
+    language Python which can be embeded directly into your document (i.e. you
     can designate Python code directly in your plain text document and the
     compiler will run the code).
 
@@ -51,18 +51,54 @@ Commands are what most people will use majority of the time because of how
     python code so there is nothing that you can do with commands that you
     cannot do with Python, commands are just far more convenient.
 
+For a more in-depth look at commands, look at the command section of the
+    tutorial.
+
 ## Python Integration
 
 The first thing you need to know is that the Compiler passes over your
-    plaintext document twice, allowing you to designate python code you want
-    to run on either pass 1 or 2. Why is this the case? So that you can do things
-    like index all your chapters on the first pass and then print out a nice
-    table of their titles and page numbers before the rest of the document is
-    printed out.
+    plaintext document twice, allowing you to run Python code on either pass
+    1 or pass 2. Pass one is when all the commands of the document are run
+    and a "token document" (which is just a list of all the tokens that make
+    up your document) is created. This token document is then given to a Placer
+    object which just reads the token document token by token (so word by word,
+    affectively) and puts each one on your PDF.
 
-Another VERY important thing to know is that the first pass is just that, a
-    first pass. None of your PDF is actually written on it. On the second one,
-    however, the Compiler is actively writing your PDF when the code is run, so
-    this is the pass you want to be doing things like changing your fonts and
-    bolding your text because this is where it will actually be done.
+    Note: Even though there are two different passes, variables assigned in the
+    first pass do carry over to the second pass. For example, if you assign "x
+    = 0" in pass 1 Python code, then you will be able to access x in pass 2
+    Python code. Of course, the opposite is not true because pass 2 Python code
+    is run after pass 1 Python code so if you assign "x = 0" in pass 2 Python
+    code you cannot get the value of x in pass 1 because "x = 0" has not been
+    run yet.
+
+    When designating Python code, you can either designate one line of it or
+    multiple lines. The single-line syntax is
+
+    \>print('This is Python code because of the \\>')
+
+    and the multi-line syntax is
+
+    \->
+    print('This is Python code because of the \\-><-\\')
+    <-\
+
+    with everything in-between the arrows being Python code. Of course, all
+    white space between the arrows is included so be careful that the code is
+    properly indented or else Python will raise an error.
+
+    By default, the designated code will be run in the first pass. If you want
+    to designate code to be run on the second pass, then you must do
+
+    \2>
+
+    or
+
+    \2-><-\
+
+    and the 2 will designate it as Python code to be run on the second pass.
+
+For a more in-depth look at how to use python, look at the python section of
+    the tutorial.
+
 
