@@ -1,6 +1,0 @@
-flake8==3.8.4
-fpdf2==2.4.2
-Pillow==8.3.1
-pycodestyle==2.6.0
-pyflakes==2.2.0
-rope==0.17.0

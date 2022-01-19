@@ -9,7 +9,7 @@
 \u = (\text, \type={single}) {
 \1->
 
-text.markup().text_info().set_underline(toolbox.underline_for_str(type))
+#text.markup().text_info().set_underline(toolbox.underline_for_str(type))
 ret = text
 
 <-\
@@ -19,7 +19,7 @@ ret = text
 \s = (\text, \type={single}) {
 \1->
 
-text.markup().text_info().set_strikethrough(toolbox.strikethrough_for_str(type))
+#text.markup().text_info().set_strikethrough(toolbox.strikethrough_for_str(type))
 ret = text
 
 <-\

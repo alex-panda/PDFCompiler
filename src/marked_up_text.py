@@ -73,6 +73,10 @@ class MarkedUpText(UserString):
             super().__init__('')
             self._markups = {}
 
+    @property
+    def _text(self):
+        return self.data
+
     def markup(self, start_index=None, end_index=None):
         """
         Returns a Markup object that marks up this Text from the start index

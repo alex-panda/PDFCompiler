@@ -1,4 +1,18 @@
-### Warning: Much of what is written below is just planned and not yet implemented.
+## Warning: Much of what is written below is just planned and not yet implemented.
+
+Despite not being complete, the current compiler can compile PDFs from
+plaintext, define and use macros within that text,  italisize and
+bold text, and can run python code directly in the document to produce more
+text in the document. You can also change the size of the pages and the layouts
+of them (make a page have more than 1 column/row of text).
+
+For a good understanding of what this compiler is capable of, look at
+src/__std__/__std_lib__.pdfo (the standard library for the compiler) or
+you can use a command line to clone the repo, cd into the src directory, and
+run the command "python main.py ../tests/oliver_twist.pdfo" to compile the
+entirety of Charles Dicken's novel "Oliver Twist" into a PDF file named
+"oliver_twist.pdf" in the src/tests directory (you may need to
+"pip install fpdf2" for the compilation to work).
 
 # PDFCompiler
 
@@ -161,5 +175,4 @@ and the 2 will designate it as Python code to be run on the second pass.
 
 For a more in-depth look at how to use python, look at the python section of
     the tutorial.
-
 

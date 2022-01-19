@@ -404,7 +404,6 @@ class Tokenizer:
 
         return token_list
 
-    _what_can_be_escaped = {'{', '}', '=', '\\', '(', ')', ','}
     def tokenize(self, file=True):
         """
         Turn the raw text into tokens that the compiler can use.
@@ -414,7 +413,7 @@ class Tokenizer:
         """
         self._tokens = []
         self._plain_text = ''
-        what_can_be_escaped = self._what_can_be_escaped
+        escape_sequences = {'\\{':'{', '\\}':'}', '\\=':'=', '\\\\':'\\', '\\(':'(', '\\)':')', '\\,':','}
 
         if file:
             self._tokens.append(Token(TT.FILE_START, '<FILE START>', self._pos.copy()))
@@ -442,10 +441,12 @@ class Tokenizer:
 
             t = None
 
-            if is_escaped(i, self._text, what_can_be_escaped):
-                self._plain_text_char()
-            elif is_escaping(i, self._text, what_can_be_escaped):
-                self._advance() # Just advance because it is just escaping something else
+            if self._match(escape_sequences.keys(), False):
+                # Handle the escape sequence
+                match = self._match(escape_sequences.keys(), True)
+                self._advance(len(match)) # Advance past the escape sequence
+                self._plain_text += escape_sequences[match] # Add the char that was escaped
+
             elif cc in END_LINE_CHARS:
                 self._try_word_token()
                 self._advance()
@@ -737,9 +738,14 @@ class Tokenizer:
         Takes the given list of strings to match and sees if any of them match
             the text at the current index of the self._text
 
-        This method does not look forward in the text for a match, just returns
-            True if the string starting at the current index matches any of
-            the matches.
+        This method takes the given list and checks if any of the strings in
+            it matches the text from the current position onward. That is,
+            if a string in matches is 'hello', then only if
+            self._text[curr_pos:curr_pos + 5] matches 'hello' will this method
+            return a truthy value (it returns the match, will evaluate to true
+            so long as the match is not an empty string which would only
+            happen if you pass an empty string in as part of the `matches`
+            list). Returns an empty string ('') if no match is found.
 
         If advance_past_on_match, then if this method matches something, it will
             advance past the string it matched.
@@ -752,9 +758,8 @@ class Tokenizer:
                 if advance_past_on_match:
                     self._advance(len(str_to_match))
 
-                return True
-        return False
-
+                return str_to_match
+        return ''
 # -----------------------------------------------------------------------------
 # Nodes for Parser
 

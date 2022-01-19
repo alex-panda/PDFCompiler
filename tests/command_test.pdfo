@@ -5,29 +5,33 @@ This is also a Test.
 
 
 
-\hi{Alex}
 
-\hi = (\first, \second={SecondName}) {
+\hi = (\first, \second={}) {
     Hello \first \second
 }
 
+\hi{Friend}
 
-\hi{Alex}{Peseckis}
+\hi{My}{Friend}
 
 
-\hi{Alex}{\second={Peseckis}}
+\hi{My}{\second={Friend}}
 
 
 \bold = (\content) {
-    \>print('BOLD')
+    BOLD_START \# Does not actually bold text, just puts 'BOLD_START' in pdf
     \content
-    \>print('BOLD')
+    BOLD_END \# Does not actually bold text, just puts 'BOLD_END' in pdf
 }
 
 This is also a Test down here.
 
 \>print('Hello')
 
-\bold{this should be bold }
+\bold{this should be surrounded by bold}
+
+\b{this should be bold}
+
+\i{this should be italcized}
 
 
