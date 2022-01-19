@@ -1,4 +1,4 @@
-## Warning: Much of what is written below is just planned and not yet implemented.
+## Warning: Some of what is written below is just planned and not yet implemented.
 
 Despite not being complete, the current compiler can compile PDFs from
 plaintext, define and use macros within that text,  italisize and
@@ -17,15 +17,14 @@ entirety of Charles Dicken's novel "Oliver Twist" into a PDF file named
 # PDFCompiler
 
 A compiler that creates richtext PDFs (the PDF's text is bolded, italicized,
-    underlined, etc.) from plain text files such as .txt files. Enriching
-    the document's text can be done either through Command Sequences,
-    which are a excedingly simple to use, or through the use of the programming
-    language Python which can be embeded directly into your document (i.e. you
-    can designate Python code directly in your plain text document and the
-    compiler will run the code).
+underlined, etc.) from plain text files such as .txt files. Enriching the
+document's text can be done either through Command Sequences, which are a
+excedingly simple to use, or through the use of the programming language Python
+which can be embeded directly into your document (i.e. you can designate Python
+code directly in your plain text document and the compiler will run the code).
 
 A short introduction to the compiler is provided below and a tutorial is
-    provided in the tutorial folder.
+provided in the tutorial folder.
 
 ## Command Sequences
 
@@ -100,12 +99,8 @@ tutorial.
 
 ## Compiling a PDF
 
-If you clone the git repository, you can run
-
-    pip install -r requirements.txt
-
-and that will install the necessary packages for you to run the compiler. Then
-you can run
+If you clone the git repository, you should only need to "pip install fpdf2"
+before you can run a command like
 
     python main.py "path/to/your/plaintext/file.pdfo"
 
@@ -125,27 +120,27 @@ and the compiler will compile the PDF.
 
 Note: If you are using a clone of the compiler then you can use PyPy for faster
 compilation. When I was compiling the entirety of Oliver Twist (which is around
-350-450 pages long depending on which font you use) it took about 40 to 50
+400-500 pages long depending on which font you use) it took about 40 to 50
 seconds with CPython (the normal Python compiler) but PyPy could do it in about
 15 to 20 seconds.
 
 ## Python Integration
 
-The first thing you need to know is that the Compiler passes over your
-plaintext document twice, allowing you to run Python code on either pass 1 or
-pass 2. Pass one is when all the commands of the document are run and a "token
-document" (which is just a list of all the tokens that make up your document)
-is created. This token document is then given to a Placer object which just
-reads the token document token by token (so word by word, affectively) and puts
-each one on your PDF.
+The first thing you need to know in order to use python code in your document
+is that the Compiler passes over your plaintext document twice, allowing you to
+run Python code on either pass 1 or pass 2. Pass one is when all the commands
+of the document are run and a "token document" (which is just a list of all the
+tokens that make up your document) is created. This token document is then
+given to a Placer object which just reads the token document token by token (so
+word by word, effectively) and places each one in your PDF.
 
 Note: Even though there are two different passes, variables assigned in the
 first pass do carry over to the second pass. For example, if you assign "x
 = 0" in pass 1 Python code, then you will be able to access x in pass 2
 Python code. Of course, the opposite is not true because pass 2 Python code
 is run after pass 1 Python code so if you assign "x = 0" in pass 2 Python
-code you cannot get the value of x in pass 1 because "x = 0" has not been
-run yet.
+code you cannot get the value of x in pass 1 Python code because "x = 0" has
+not been run yet.
 
 When designating Python code, you can either designate one line of it or
 multiple lines. The single-line syntax is
@@ -173,6 +168,4 @@ or
 
 and the 2 will designate it as Python code to be run on the second pass.
 
-For a more in-depth look at how to use python, look at the python section of
-    the tutorial.
 
