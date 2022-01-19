@@ -1,0 +1,627 @@
+\# This is the standard library that holds all the standard commands that will
+\#    be available for every file.
+
+\# ============================================================================
+\# Basic Text Manipulation
+\# ----------------------------------------------------------------------------
+
+\# Underline Text
+\u = (\text, \type={single}) {
+\1->
+
+text.markup().text_info().set_underline(toolbox.underline_for_str(type))
+ret = text
+
+<-\
+}
+
+\### Strikethrough text
+\s = (\text, \type={single}) {
+\1->
+
+text.markup().text_info().set_strikethrough(toolbox.strikethrough_for_str(type))
+ret = text
+
+<-\
+}
+
+\### Bold text
+\b = (\text) {
+\1->
+
+text.markup().text_info().set_bold(True)
+ret = text
+
+<-\
+}
+
+\### Set Text
+
+\### Italicize text
+\i = (\text) {
+\1->
+
+text.markup().text_info().set_italics(True)
+ret = text
+
+<-\
+}
+
+\### Set the font for all the text after this command is called
+\set_font = (\name={<NONE>}, \size={<NONE>}) {
+\2->
+
+ti = pdf.curr_template().default().text_info()
+
+if name is not None:
+    ti.set_font_name(str(name))
+
+if size is not None:
+    ti.set_font_size(int(str(size)))
+
+<-\
+}
+
+\### Changes the font for the given txt to the given font
+\font = (\text, \name={<NONE>}, \size={<NONE>}) {
+\2->
+
+if name is not None:
+    text.markup().text_info().set_font_name(validate_font(font_name))
+
+if size is not None:
+    text.markup.text_info().set_font_size(int(str(font_size)))
+
+ret = text
+
+<-\
+}
+
+\### Set the color for all the text after this command is called
+\set_font_color = (\font_color) {
+\2->
+
+pdf.curr_template().default().text_info().set_font_color(toolbox.color_for_str(font_color))
+
+<-\
+}
+
+\### Colors the given text the given color
+\color = (\font_color, \text) {
+\1->
+
+markup = toolbox.Markup()
+markup.text_info().set_font_color(toolbox.color_for_str(font_color))
+text.add_markup(markup)
+
+<-\
+}
+
+\### Highlights all the text after this command the given color
+\set_highlight = (\highlight_color) {
+\2->
+
+pdf.curr_template().default().text_info().set_font_highlight_color(toolbox.color_for_str(font_color))
+
+<-\
+}
+
+\### Highlights the given text with the given color
+\highlight = (\highlight_color, \text) {
+\1->
+
+markup = toolbox.Markup()
+markup.text_info().set_font_highlight_color(toolbox.color_from_str(font_color))
+text.add_markup(markup)
+
+<-\
+}
+
+\set_align = (\alignment) {
+\2->
+
+pdf.curr_template().default().text_info().set_alignment(toolbox.alignment_for_str(alignment))
+
+<-\
+}
+
+\align = (\alignment, \text) {
+\1->
+
+markup = toolbox.Markup()
+markup.text_info().set_alignment(toolbox.alignment_for_str(alignment))
+text.add_markup(markup)
+
+<-\
+}
+
+\# ============================================================================
+\# Importing/Inserting Files
+\# ----------------------------------------------------------------------------
+\# Importing is for when you only want the commands from the file, whereas
+\#  inserting is when you want the text from the file, along with the commands
+\#  to be inserted into your PDF document.
+
+\### Imports a file, first checking the path relative to the current file and then checking the standard imports
+\### file_path is checked relative to the current file, then checked relative to
+\###    the main/input file, and then, if the file is still not found, the
+\###    standard library is checked for the file
+\import = (\file_path) {
+    \1>compiler.import_file(file_path)
+}
+
+\### Imports a file relative to the current file
+\strict_import = (\file_path) {
+    \1>compiler.strict_import_file(file_path)
+}
+
+\### Imports a standard import
+\std_import = (\file_path) {
+    \1>compiler.std_import_file(file_path)
+}
+
+\### Imports file, first checking the standard imports and then checking the
+\###    path relative to the main/input file, and then checking the file
+\###    relative to the current file
+\far_import = (\file_path) {
+    \1>compiler.far_import_file(file_path)
+}
+
+\### Insert a file. Both the file's text and commands are inserted into the PDF at this point.
+\### file_path is checked relative to the current file, then checked relative to
+\###    the main/input file, and then, if the file is still not found, the
+\###    standard library is checked for the file
+\insert = (\file_path) {
+    \1>compiler.insert_file(file_path)
+}
+
+\### Inserts a file relative to the current file
+\strict_insert = (\file_path) {
+    \1>compiler.strict_insert_file(file_path)
+}
+
+\### Far insert a file. Same as far import but for inserting
+\far_insert = (\file_path) {
+    \1>compiler.far_insert_file(file_path)
+}
+
+\# ============================================================================
+\# Other Useful Commands
+\# ----------------------------------------------------------------------------
+
+\### Saves the current state of the pdf
+\push_state = {
+
+}
+
+\### Restores the state of the pdf to what it was when last saved
+\pop_state = {
+
+}
+
+\### Put the Available fonts in the document at this point so that you
+\###    can know what fonts are available
+\available_fonts = (\directory={<NONE>}) {
+\1->
+
+def make_font_str(font_name_str, file_path=None):
+    try:
+        # Register the font so that it can be used
+        toolbox.register_font(str(font_name_str), str(file_path))
+
+        # Provide the name of the font
+        m = toolbox.MarkedUpText(f'{font_name_str}:')
+
+        # Now provide an example of the font
+        m2 = toolbox.MarkedUpText(' THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG the quick brown fox jumps over the lazy dog 0123456789 . : , ; \' " (!?) + - * / \\ =')
+        m2.markup().text_info().set_font_name(str(font_name_str))
+        m2 += '\n\n'
+
+        #print(f'LOADED: {font_name_str}, {file_path}')
+        return m + m2
+    except AssertionError as e:
+        #print(f'COULD NOT LOAD: {font_name_str}, {file_path}')
+        #print(e)
+        return ''
+
+def make_font_fam_str(font_family):
+    m = toolbox.MarkedUpText(f'{font_family.name}:')
+
+    m1 = toolbox.MarkedUpText(f' {font_family.norm}')
+    m1.markup().text_info().set_font_name(font_family.norm)
+    m += m1
+
+    m2 = toolbox.MarkedUpText(f', {font_family.bold}')
+    m2.markup().text_info().set_font_name(font_family.bold)
+    m += m2
+
+    m3 = toolbox.MarkedUpText(f', {font_family.italics}')
+    m3.markup().text_info().set_font_name(font_family.italics)
+    m += m3
+
+    m4 = toolbox.MarkedUpText(f', {font_family.bold_italics}')
+    m4.markup().text_info().set_font_name(font_family.bold_italics)
+    m += m4
+
+    m += '\n\n'
+
+    return m
+
+if directory is None:
+    # No Directory was given so just given fonts available on the file system
+    title_text_info = toolbox.TextInfo()
+    title_text_info.set_alignment(toolbox.ALIGNMENT.CENTER) \
+            .set_bold(True) \
+            .set_font_color(toolbox.COLOR.RED) \
+            .set_font_size(14) \
+            .set_underline(toolbox.UNDERLINE.SINGLE)
+
+    reg_std_fonts = set(toolbox.standard_fonts())
+    reg_std_fonts.update(toolbox.registered_fonts())
+    sys_fonts = toolbox.system_fonts()
+
+    sys_font_fams = toolbox.system_font_families()
+    reg_font_fams = toolbox.registered_font_families()
+
+    # Add the registered and standard fonts
+    string = toolbox.MarkedUpText('Standard/Imported Fonts: ')
+    string.markup().set_text_info(title_text_info.copy())
+    string += '\n\n'
+
+    for font in reg_std_fonts:
+        string += make_font_str(font)
+
+    # Add the registered and standard font families
+    title = toolbox.MarkedUpText('Standard/Imported Font Families: ')
+    title.markup().set_text_info(title_text_info.copy())
+    string += (title + '\n\n')
+
+    for font_family in reg_font_fams.values():
+        string += make_font_fam_str(font_family)
+
+    title = toolbox.MarkedUpText('Unimported Fonts on Your System (Import These To Use Them): ')
+    title.markup().set_text_info(title_text_info.copy())
+    string += (title + '\n\n')
+
+    # Now add the unregistered fonts on you system
+    for font_name, file_path in sys_fonts.items():
+        if not (font_name in reg_std_fonts):
+            string += make_font_str(font_name, file_path)
+
+    # Add the registered and standard font families
+    title = toolbox.MarkedUpText('Unimported Font Families on Your System: ')
+    title.markup().set_text_info(title_text_info.copy())
+    string += (title + '\n\n')
+
+    for font_fam_name, font_family in sys_font_fams.items():
+        if not (font_fam_name in reg_font_fams):
+            string += make_font_fam_str(font_family)
+    ret = string
+else:
+    # a directory was given so insert all the fonts available in that
+    #   directory into the document
+    # TODO
+    pass
+<-\
+}
+
+\### Imports a font so that it can be used in the rest of the PDF. If a
+\###    path_to_font_file is not specified, then a list of default paths
+\###    will be searched for the font with the given font_name
+\import_font = (\font_name, \path_to_font_file={<NONE>}) {
+\1->
+
+toolbox.register_font(font_name, path_to_font_file)
+
+<-\
+}
+
+\### Registers a family of fonts, allowing you to do things like set
+\###    text to be bold or italics and the text becomes bold or italics or both
+\### The fonts used must be imported first using the \import_font command
+\register_font_family = (\family_name, \normal_font_name, \bold_font_name, \italics_font_name, \bold_italics_font_name) {
+\1->
+
+toolbox.register_font_family(family_name, normal_font_name, bold_font_name, italics_font_name, bold_italics_font_name)
+
+<-\
+}
+
+\# ============================================================================
+\# Setting MetaData
+\# ----------------------------------------------------------------------------
+
+\1->
+class __PDFMetaData__:
+    """
+    A class meant for setting and getting the general metadata of the PDF. For
+    example, the PDF can be given an Author and Description, so you would set
+    it on this object and then it will be on the PDF later.
+    """
+    def __init__(self):
+        self._title = None
+        self._subject = None
+        self._author = None
+        self._creator = None
+        self._keywords = None
+        self._creation_date = None
+        self._language = None
+
+        # Fields that can be set but not directly applied to the canvas
+        self._dates_modified = []
+        self._publisher = None
+        self._isbn = None
+
+    def title(self):
+        return self._title
+
+    def set_title(self, new):
+        self._title = None if new is None else str(new)
+
+    def subject(self):
+        return self._subject
+
+    def set_subject(self, new):
+        self._subject = None if new is None else str(new)
+
+    def author(self):
+        return self._author
+
+    def set_author(self, new):
+        self._author = None if new is None else str(new)
+
+    def creator(self):
+        return self._subject
+
+    def set_creator(self, new):
+        self._creator = None if new is None else str(new)
+
+    def keywords(self):
+        return self._keywords
+
+    def set_keywords(self, new):
+        self._keywords = None if new is None else str(new)
+
+    def language(self):
+        return self._language
+
+    def set_language(self, new):
+        self._language = None if new is None else str(new)
+
+    def creation_date(self):
+        return self._creation_date
+
+    def set_creation_date(self, new):
+        self._creation_date = None if new is None else str(new)
+
+    def apply_to_canvas(self, canvas_obj):
+        """
+        Applies this PDFMetadata to the given Canvas.
+        """
+        # This is what will be called later to actually apply this metadata
+        #   to the canvas.
+        c = canvas_obj
+
+        if self._title is not None:
+            c.set_title(self._title)
+
+        if self._subject is not None:
+            c.set_subject(self._subject)
+
+        if self._author is not None:
+            c.set_author(self._author)
+
+        if self._creator is not None:
+            c.set_creator(self._creator)
+
+        if self._keywords is not None:
+            c.set_keywords(self._keywords)
+
+        if self._language is not None:
+            c.set_lang(self._language)
+
+        if self._creation_date is not None:
+            c.set_creation_date(self._creation_date)
+
+    # -------------------------------------------------------------------------
+    # Getters and Setters for fields that can be set but not directly applied
+    #   to the canvas
+
+    def dates_modified(self):
+        return self._dates_modified
+
+    def add_date_modified(self, date_str):
+        self._dates_modified.append(date_str)
+
+    def publisher(self):
+        return self._publisher
+
+    def set_publisher(self, new):
+        self._publisher = None if new is None else str(new)
+
+    def isbn(self):
+        return self._isbn
+
+    def set_isbn(self, new):
+        self._isbn = None if new is None else str(new)
+
+__pdfmetadata__ = __PDFMetaData__()
+<-\
+
+\# This will make it so that the object will be applied to the canvas when the
+\#  canvas is first created. __pdfmetadata__'s apply_to_canvas method will be
+\#  called, as would any other object's apply_to_canvas method would if they
+\#  were added
+
+\2>pdf.add_apply_to_canvas_obj(__pdfmetadata__)
+
+\# ====== Getter and Setter Commands for the MetaData ======
+
+\### Returns or sets the title of the document
+\title = (\new_title={<NONE>}) {
+\1->
+if new_title is None:
+    # Whatever is assigned to ret will be returned as text and put in the pdf
+    ret = __pdfmetadata__.title()
+else:
+    __pdfmetadata__.set_title(new_title)
+
+<-\
+}
+
+\### Returns or sets the subject of the document
+\subject = (\new_subject={<NONE>}) {
+\1->
+
+if new_subject is None:
+    ret = __pdfmetadata__.subject()
+else:
+    __pdfmetadata__.set_subject(new_subject)
+
+<-\
+}
+
+\### Returns or sets the author of the document
+\author = (\new_author={<NONE>}) {
+\1->
+
+if new_author is None:
+    ret = __pdfmetadata__.author()
+else:
+    __pdfmetadata__.set_author(new_author)
+
+<-\
+}
+
+\### Returns or sets the creator of the document
+\creator = (\new_creator={<NONE>}) {
+\1->
+
+if new_creator is None:
+    ret = __pdfmetadata__.creator()
+else:
+    __pdfmetadata__.set_creator(new_creator)
+
+<-\
+}
+
+\### Returns or sets the keywords of the document
+\keywords = (\new_keywords={<NONE>}) {
+\1->
+
+if new_keywords is None:
+    ret = __pdfmetadata__.keywords()
+else:
+    __pdfmetadata__.set_keywords(new_keywords)
+
+<-\
+}
+
+\### Sets or Gets the langauge that the document is in
+\language = (\language={<NONE>}) {
+\1->
+
+if language is None:
+    ret = __pdfmetadata__.language()
+else:
+    __pdfmetadata__.set_language(language)
+
+<-\
+}
+
+\### Sets or Gets the creation date of the document
+\created = (\creation_date={<NONE>}) {
+\1->
+
+if creation_date is None:
+    ret = __pdfmetadata__.creation_date()
+else:
+    __pdfmetadata__.set_creation_date(creation_date)
+
+<-\
+}
+
+\### Adds or Gets the modification dates of the document
+\modified = (\date_modified={<NONE>}) {
+\1->
+
+if date_modified is None:
+    ret = __pdfmetadata__.dates_modified()
+else:
+    __pdfmetadata__.add_date_modified(date_modified)
+
+<-\
+}
+
+
+\### Adds or Gets the publisher of the document
+\publisher = (\publisher={<NONE>}) {
+\1->
+
+if publisher is None:
+    ret = __pdfmetadata__.publisher()
+else:
+    __pdfmetadata__.set_publisher(publisher)
+
+<-\
+}
+
+\### Adds or Gets the isbn of the document
+\isbn = (\isbn={<NONE>}) {
+\1->
+
+if isbn is None:
+    ret = __pdfmetadata__.isbn()
+else:
+    __pdfmetadata__.set_isbn(isbn)
+
+<-\
+}
+
+
+\# ============================================================================
+\# Generic Sections
+\# ----------------------------------------------------------------------------
+
+
+\# Starts a generic section of the PDF
+\section = (\title, \subtitle={<NONE>}) {
+\font{\size={\1?>pdf.curr_template().default().text_info().font_size() + 16<1\
+}}{\text}
+
+\1>if subtitle is not None: ret = subtitle
+}
+
+\# Starts a generic subsection of the PDF
+\subsection = (\title, \subtitle={<NONE>}) {
+\font{\size={\1?>pdf.curr_template().default().text_info().font_size() + 12<1\
+}}{\text}
+
+\1>if subtitle is not None: ret = subtitle
+}
+
+\# Starts a generic subsubsection of the PDF
+\subsubsection = (\title, \subtitle={<NONE>}) {
+\font{\size={\1?>pdf.curr_template().default().text_info().font_size() + 8<1\
+}}{\text}
+
+\1>if subtitle is not None: ret = subtitle
+}
+
+\subsubsubsection = (\title, \subtitle={<NONE>}) {
+\font{\size={\1?>pdf.curr_template().default().text_info().font_size() + 4<1\
+}}{\text}
+
+\1>if subtitle is not None: ret = subtitle
+}
+
+\# ============================================================================
+\# Initialize The Defaults Of the Document
+\# ----------------------------------------------------------------------------
+
+\# Notice that the file paths are from this file to the desired file
+\import_font{CMUConcrete-Roman}{../Fonts/Computer Modern/cmunorm.ttf}
+\import_font{CMUConcrete-Bold}{../Fonts/Computer Modern/cmunobx.ttf}
+\import_font{CMUConcrete-Italic}{../Fonts/Computer Modern/cmunit.ttf}
+\import_font{CMUConcrete-BoldItalic}{../Fonts/Computer Modern/cmunobi.ttf}
+\set_font{CMUConcrete}
